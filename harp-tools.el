@@ -1,4 +1,4 @@
-;;; harness-tools.el --- Tool definitions for harness -*- lexical-binding: t -*-
+;;; harp-tools.el --- Tool definitions for harp -*- lexical-binding: t -*-
 
 ;;; Commentary:
 ;; Defines tools that the LLM can invoke: file operations, shell commands, search.
@@ -10,49 +10,49 @@
 
 ;;; Tool registry
 
-(defvar harness-tools-alist nil
+(defvar harp-tools-alist nil
   "Alist of (name . handler) for registered tools.")
 
-(defvar harness-tools-schemas nil
+(defvar harp-tools-schemas nil
   "List of tool schemas for API calls.")
 
-(defun harness-register-tool (name description input-schema handler)
+(defun harp-register-tool (name description input-schema handler)
   "Register a tool with NAME, DESCRIPTION, INPUT-SCHEMA, and HANDLER function."
-  (setf (alist-get name harness-tools-alist nil nil #'string=) handler)
+  (setf (alist-get name harp-tools-alist nil nil #'string=) handler)
   (let ((schema `((name . ,name)
                   (description . ,description)
                   (input_schema . ,input-schema))))
     ;; Update or add schema
-    (setq harness-tools-schemas
+    (setq harp-tools-schemas
           (cons schema
                 (cl-remove-if (lambda (s) (string= (alist-get 'name s) name))
-                              harness-tools-schemas)))))
+                              harp-tools-schemas)))))
 
-(defun harness-execute-tool (name input)
+(defun harp-execute-tool (name input)
   "Execute tool NAME with INPUT, return result string."
-  (if-let ((handler (alist-get name harness-tools-alist nil nil #'string=)))
+  (if-let ((handler (alist-get name harp-tools-alist nil nil #'string=)))
       (condition-case err
           (funcall handler input)
         (error (format "Error executing %s: %s" name (error-message-string err))))
     (format "Unknown tool: %s" name)))
 
-(defun harness-get-tool-schemas ()
+(defun harp-get-tool-schemas ()
   "Return list of tool schemas for API calls."
-  harness-tools-schemas)
+  harp-tools-schemas)
 
 ;;; File display hook
 
-(defvar harness-file-display-hook nil
+(defvar harp-file-display-hook nil
   "Hook called with filepath when a file is accessed.
 Used to display files in the file pane.")
 
-(defun harness--notify-file-access (filepath)
+(defun harp--notify-file-access (filepath)
   "Notify that FILEPATH was accessed."
-  (run-hook-with-args 'harness-file-display-hook filepath))
+  (run-hook-with-args 'harp-file-display-hook filepath))
 
 ;;; Tool: read_file
 
-(harness-register-tool
+(harp-register-tool
  "read_file"
  "Read the contents of a file at the given path."
  '((type . "object")
@@ -61,7 +61,7 @@ Used to display files in the file pane.")
    (required . ["path"]))
  (lambda (input)
    (let ((path (alist-get 'path input)))
-     (harness--notify-file-access path)
+     (harp--notify-file-access path)
      (if (file-exists-p path)
          (with-temp-buffer
            (insert-file-contents path)
@@ -70,7 +70,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: write_file
 
-(harness-register-tool
+(harp-register-tool
  "write_file"
  "Write content to a file, creating it if it doesn't exist."
  '((type . "object")
@@ -85,7 +85,7 @@ Used to display files in the file pane.")
      (make-directory (file-name-directory path) t)
      (with-temp-file path
        (insert content))
-     (harness--notify-file-access path)
+     (harp--notify-file-access path)
      ;; Revert buffer if open
      (when-let ((buf (find-buffer-visiting path)))
        (with-current-buffer buf
@@ -94,7 +94,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: edit_file
 
-(harness-register-tool
+(harp-register-tool
  "edit_file"
  "Edit a file by replacing old_string with new_string. The old_string must match exactly."
  '((type . "object")
@@ -109,7 +109,7 @@ Used to display files in the file pane.")
    (let ((path (alist-get 'path input))
          (old-string (alist-get 'old_string input))
          (new-string (alist-get 'new_string input)))
-     (harness--notify-file-access path)
+     (harp--notify-file-access path)
      (if (not (file-exists-p path))
          (format "File not found: %s" path)
        (let ((content (with-temp-buffer
@@ -132,7 +132,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: run_shell
 
-(harness-register-tool
+(harp-register-tool
  "run_shell"
  "Execute a shell command and return its output."
  '((type . "object")
@@ -151,7 +151,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: glob
 
-(harness-register-tool
+(harp-register-tool
  "glob"
  "Find files matching a glob pattern."
  '((type . "object")
@@ -171,7 +171,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: grep
 
-(harness-register-tool
+(harp-register-tool
  "grep"
  "Search for a pattern in files using grep."
  '((type . "object")
@@ -199,7 +199,7 @@ Used to display files in the file pane.")
 
 ;;; Tool: list_directory
 
-(harness-register-tool
+(harp-register-tool
  "list_directory"
  "List contents of a directory."
  '((type . "object")
@@ -219,12 +219,12 @@ Used to display files in the file pane.")
 
 ;;; Dangerous tools list
 
-(defvar harness-dangerous-tools '("write_file" "edit_file" "run_shell")
+(defvar harp-dangerous-tools '("write_file" "edit_file" "run_shell")
   "List of tool names that require approval.")
 
-(defun harness-tool-dangerous-p (name)
+(defun harp-tool-dangerous-p (name)
   "Return non-nil if tool NAME is dangerous and requires approval."
-  (member name harness-dangerous-tools))
+  (member name harp-dangerous-tools))
 
-(provide 'harness-tools)
-;;; harness-tools.el ends here
+(provide 'harp-tools)
+;;; harp-tools.el ends here

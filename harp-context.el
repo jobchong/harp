@@ -1,4 +1,4 @@
-;;; harness-context.el --- Context gathering for harness -*- lexical-binding: t -*-
+;;; harp-context.el --- Context gathering for harp -*- lexical-binding: t -*-
 
 ;;; Commentary:
 ;; Gathers project context (files, git status, etc.) for LLM prompts.
@@ -9,49 +9,49 @@
 
 ;;; Customization
 
-(defgroup harness-context nil
-  "Context gathering settings for harness."
-  :group 'harness)
+(defgroup harp-context nil
+  "Context gathering settings for harp."
+  :group 'harp)
 
-(defcustom harness-context-include-git t
+(defcustom harp-context-include-git t
   "Whether to include git status in context."
   :type 'boolean
-  :group 'harness-context)
+  :group 'harp-context)
 
-(defcustom harness-context-include-file-content t
+(defcustom harp-context-include-file-content t
   "Whether to include current file content in context."
   :type 'boolean
-  :group 'harness-context)
+  :group 'harp-context)
 
-(defcustom harness-context-max-file-size 50000
+(defcustom harp-context-max-file-size 50000
   "Maximum file size to include in context (characters)."
   :type 'integer
-  :group 'harness-context)
+  :group 'harp-context)
 
 ;;; Context gathering
 
-(defun harness-context--git-root ()
+(defun harp-context--git-root ()
   "Get git root directory, or nil if not in a git repo."
   (when-let ((output (shell-command-to-string "git rev-parse --show-toplevel 2>/dev/null")))
     (unless (string-empty-p output)
       (string-trim output))))
 
-(defun harness-context--git-status ()
+(defun harp-context--git-status ()
   "Get git status summary."
-  (when (harness-context--git-root)
+  (when (harp-context--git-root)
     (shell-command-to-string "git status --short 2>/dev/null")))
 
-(defun harness-context--git-branch ()
+(defun harp-context--git-branch ()
   "Get current git branch."
-  (when (harness-context--git-root)
+  (when (harp-context--git-root)
     (string-trim (shell-command-to-string "git branch --show-current 2>/dev/null"))))
 
-(defun harness-context--project-root ()
+(defun harp-context--project-root ()
   "Get project root directory."
   (when-let ((proj (project-current)))
     (project-root proj)))
 
-(defun harness-context--current-file (file-buffer)
+(defun harp-context--current-file (file-buffer)
   "Get info about FILE-BUFFER if it's visiting a file."
   (when (and file-buffer (buffer-live-p file-buffer))
     (with-current-buffer file-buffer
@@ -60,36 +60,36 @@
           (mode . ,(symbol-name major-mode))
           (modified . ,(buffer-modified-p)))))))
 
-(defun harness-context--current-file-content (file-buffer)
+(defun harp-context--current-file-content (file-buffer)
   "Get content of FILE-BUFFER, truncated if too large."
   (when (and file-buffer
              (buffer-live-p file-buffer)
-             harness-context-include-file-content)
+             harp-context-include-file-content)
     (with-current-buffer file-buffer
       (when buffer-file-name
         (let ((content (buffer-string)))
-          (if (> (length content) harness-context-max-file-size)
-              (concat (substring content 0 harness-context-max-file-size)
+          (if (> (length content) harp-context-max-file-size)
+              (concat (substring content 0 harp-context-max-file-size)
                       "\n... [truncated]")
             content))))))
 
-(defun harness-context-gather (file-buffer)
+(defun harp-context-gather (file-buffer)
   "Gather context for LLM prompt. FILE-BUFFER is the file pane buffer."
   (let ((ctx '()))
     ;; Project info
-    (when-let ((root (harness-context--project-root)))
+    (when-let ((root (harp-context--project-root)))
       (push `(project-root . ,root) ctx))
     ;; Git info
-    (when harness-context-include-git
-      (when-let ((branch (harness-context--git-branch)))
+    (when harp-context-include-git
+      (when-let ((branch (harp-context--git-branch)))
         (push `(git-branch . ,branch) ctx))
-      (when-let ((status (harness-context--git-status)))
+      (when-let ((status (harp-context--git-status)))
         (unless (string-empty-p status)
           (push `(git-status . ,status) ctx))))
     ;; Current file
-    (when-let ((file-info (harness-context--current-file file-buffer)))
+    (when-let ((file-info (harp-context--current-file file-buffer)))
       (push `(current-file . ,file-info) ctx))
-    (when-let ((content (harness-context--current-file-content file-buffer)))
+    (when-let ((content (harp-context--current-file-content file-buffer)))
       (push `(current-file-content . ,content) ctx))
     ;; Working directory
     (push `(working-directory . ,default-directory) ctx)
@@ -100,7 +100,7 @@
 
 ;;; System prompt generation
 
-(defvar harness-system-prompt-template
+(defvar harp-system-prompt-template
   "You are a coding assistant integrated into Emacs. You help the user with software engineering tasks.
 
 You have access to tools for reading and writing files, running shell commands, and searching the codebase. Use these tools to accomplish tasks.
@@ -124,7 +124,7 @@ You have access to tools for reading and writing files, running shell commands, 
 5. Git info (or empty)
 6. Current file info (or empty)")
 
-(defun harness-context-build-system-prompt (context)
+(defun harp-context-build-system-prompt (context)
   "Build system prompt string from CONTEXT alist."
   (let ((platform (or (alist-get 'platform context) "unknown"))
         (emacs-ver (or (alist-get 'emacs-version context) emacs-version))
@@ -143,9 +143,9 @@ You have access to tools for reading and writing files, running shell commands, 
                               (alist-get 'path file-info)
                               (alist-get 'mode file-info))
                     "")))
-    (format harness-system-prompt-template
+    (format harp-system-prompt-template
             platform emacs-ver working-dir
             project-str git-str file-str)))
 
-(provide 'harness-context)
-;;; harness-context.el ends here
+(provide 'harp-context)
+;;; harp-context.el ends here

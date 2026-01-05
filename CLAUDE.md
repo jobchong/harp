@@ -4,16 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-emacs-harness is an Emacs package providing a coding assistant with a two-pane interface (chat + file). It supports Claude (Anthropic) and GPT (OpenAI) with streaming responses and configurable tool approval.
+emacs-harp is an Emacs package providing a coding assistant with a two-pane interface (chat + file). It supports Claude (Anthropic) and GPT (OpenAI) with streaming responses and configurable tool approval.
 
 ## File Structure
 
-- `harness.el` - Entry point, window layout (`harness-start`, `harness-quit`)
-- `harness-chat.el` - Chat buffer mode, RET to send, y/n for approvals
-- `harness-api.el` - Provider abstraction, SSE streaming, message builders
-- `harness-tools.el` - Tool registry (read_file, write_file, edit_file, run_shell, glob, grep)
-- `harness-approval.el` - Approval system (none/dangerous-only/full), per-project config
-- `harness-context.el` - Gathers git status, project root, current file for system prompt
+- `harp.el` - Entry point, window layout (`harp-start`, `harp-quit`)
+- `harp-chat.el` - Chat buffer mode, RET to send, y/n for approvals
+- `harp-api.el` - Provider abstraction, SSE streaming, message builders
+- `harp-tools.el` - Tool registry (read_file, write_file, edit_file, run_shell, glob, grep)
+- `harp-approval.el` - Approval system (none/dangerous-only/full), per-project config
+- `harp-context.el` - Gathers git status, project root, current file for system prompt
 
 ## Development Commands
 
@@ -25,18 +25,18 @@ emacs -Q -batch -L . -f batch-byte-compile *.el
 emacs -Q -batch -L . --eval "(setq byte-compile-error-on-warn t)" -f batch-byte-compile *.el
 
 # Run ERT tests
-emacs -Q -batch -L . -l harness-test.el -f ert-run-tests-batch-and-exit
+emacs -Q -batch -L . -l harp-test.el -f ert-run-tests-batch-and-exit
 
 # Run a single test
-emacs -Q -batch -L . -l harness-test.el --eval "(ert-run-tests-batch-and-exit 'test-name)"
+emacs -Q -batch -L . -l harp-test.el --eval "(ert-run-tests-batch-and-exit 'test-name)"
 ```
 
 ## Key Patterns
 
-- Agent loop in `harness-chat--call-api` → streaming → tool calls → execute → loop
-- Tools registered via `harness-register-tool` with JSON schema for API
-- Approval flows through `harness-approval-execute-with-approval` which prompts in chat buffer
-- File pane auto-updates via `harness-file-display-hook` when tools access files
+- Agent loop in `harp-chat--call-api` → streaming → tool calls → execute → loop
+- Tools registered via `harp-register-tool` with JSON schema for API
+- Approval flows through `harp-approval-execute-with-approval` which prompts in chat buffer
+- File pane auto-updates via `harp-file-display-hook` when tools access files
 - All interaction happens in chat buffer (no minibuffer) - RET sends, y/n approves
 
 ## Autonomy loop expectations
