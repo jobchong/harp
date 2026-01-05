@@ -189,7 +189,7 @@
 (defun harp--handle-openai-event (event)
   "Handle OpenAI streaming EVENT, return (type . data)."
   (let* ((choices (alist-get 'choices event))
-         (choice (and choices (aref choices 0)))
+         (choice (and choices (> (length choices) 0) (aref choices 0)))
          (delta (alist-get 'delta choice))
          (finish (alist-get 'finish_reason choice)))
     (cond
