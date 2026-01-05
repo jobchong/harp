@@ -10,6 +10,7 @@
 (require 'harp-tools)
 (require 'harp-approval)
 (require 'harp-context)
+(require 'project)
 
 ;;; Customization
 
@@ -172,7 +173,11 @@
               (setq input-str (concat (substring input-str 0 300) "...")))
             (insert " " input-str)))
         (insert "\n")
-        (set-marker harp-chat--assistant-marker (point))))))
+        (set-marker harp-chat--assistant-marker (point))))
+    (goto-char (point-max))
+    (insert (propertize "> " 'face 'harp-prompt-face))
+    (set-marker harp-chat--input-marker (point))
+    (goto-char (point-max))))
 
 (defun harp-chat--finish-response ()
   "Clean up after response is complete."
@@ -351,13 +356,22 @@
         (insert "Type your message and press RET to send.\n")
         (insert "Tools requiring approval will prompt with [y/n].\n\n")
         (harp-chat--insert-prompt)
+        (when-let ((proj (project-current)))
+          (setq default-directory (project-root proj)))
         (goto-char (point-max))))
     buf))
 
 (defun harp-chat-set-file-buffer (buffer)
   "Set the file BUFFER that this chat is associated with."
   (with-current-buffer harp-chat-buffer-name
-    (setq harp-chat--file-buffer buffer)))
+    (setq harp-chat--file-buffer buffer)
+    (when buffer
+      (let ((proj (project-current nil buffer)))
+        (setq default-directory
+              (or (and proj (project-root proj))
+                  (and (buffer-file-name buffer)
+                       (file-name-directory (buffer-file-name buffer)))
+                  default-directory))))))
 
 (provide 'harp-chat)
 ;;; harp-chat.el ends here
