@@ -315,6 +315,9 @@ ON-EVENT called incrementally, ON-DONE when complete."
           (url-retrieve
            url
            (lambda (status)
+             (message "harp: url-retrieve callback, status=%S" status)
+             (message "harp: response buffer contents (first 500 chars): %s"
+                      (buffer-substring (point-min) (min (point-max) 500)))
              ;; Fallback: call on-done if not already called via stream
              (unless done-called
                (setq done-called t)
@@ -331,6 +334,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
       (set-process-filter
        proc
        (lambda (proc chunk)
+         (message "harp: received chunk (%d bytes)" (length chunk))
          ;; Default filter behavior
          (when (buffer-live-p (process-buffer proc))
            (with-current-buffer (process-buffer proc)
@@ -339,6 +343,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
              ;; Process new content
              (let* ((new-content (buffer-substring process-pos (point-max)))
                     (events (harp--process-stream-chunk new-content provider)))
+               (when events (message "harp: parsed %d events" (length events)))
                (setq process-pos (point-max))
                (dolist (event events)
                  (when on-event
