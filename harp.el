@@ -124,14 +124,6 @@ Left pane is the chat interface, right pane shows files."
   (message "Harp closed."))
 
 ;;;###autoload
-(defun harp-select-provider (provider)
-  "Select PROVIDER (anthropic or openai)."
-  (interactive
-   (list (intern (completing-read "Provider: " '("anthropic" "openai")))))
-  (setq harp-default-provider provider)
-  (message "Selected %s" provider))
-
-;;;###autoload
 (defun harp-set-approval-mode (mode)
   "Set approval MODE (none, dangerous-only, or full)."
   (interactive
@@ -140,36 +132,34 @@ Left pane is the chat interface, right pane shows files."
   (setq harp-approval-mode mode)
   (message "Approval mode set to %s" mode))
 
-(defvar harp-anthropic-models
-  '("claude-opus-4-5-20251101"
-    "claude-sonnet-4-20250514"
-    "claude-3-5-sonnet-20241022"
-    "claude-3-5-haiku-20241022")
-  "Available Anthropic models.")
+(defvar harp-models
+  '(("claude-opus-4-5-20251101" . anthropic)
+    ("claude-sonnet-4-20250514" . anthropic)
+    ("claude-3-5-sonnet-20241022" . anthropic)
+    ("claude-3-5-haiku-20241022" . anthropic)
+    ("gpt-4o" . openai)
+    ("gpt-4-turbo" . openai)
+    ("o1-preview" . openai))
+  "Available models and their providers.")
 
-(defvar harp-openai-models
-  '("gpt-5.1-codex-max"
-    "gpt-4o"
-    "gpt-4-turbo"
-    "o1-preview")
-  "Available OpenAI models.")
+(defcustom harp-model "claude-sonnet-4-20250514"
+  "Current model to use."
+  :type 'string
+  :group 'harp)
 
 ;;;###autoload
 (defun harp-select-model (model)
-  "Select MODEL for the current provider."
+  "Select MODEL and automatically set the appropriate provider."
   (interactive
-   (let* ((models (pcase harp-default-provider
-                    ('anthropic harp-anthropic-models)
-                    ('openai harp-openai-models)
-                    (_ (user-error "Unknown provider"))))
-          (current (pcase harp-default-provider
-                     ('anthropic harp-model-anthropic)
-                     ('openai harp-model-openai))))
-     (list (completing-read (format "Model [%s]: " current) models nil nil nil nil current))))
-  (pcase harp-default-provider
-    ('anthropic (setq harp-model-anthropic model))
-    ('openai (setq harp-model-openai model)))
-  (message "Model set to %s" model))
+   (list (completing-read
+          (format "Model [%s]: " harp-model)
+          (mapcar #'car harp-models) nil t nil nil harp-model)))
+  (let ((provider (alist-get model harp-models nil nil #'string=)))
+    (unless provider
+      (user-error "Unknown model: %s" model))
+    (setq harp-model model)
+    (setq harp-default-provider provider)
+    (message "Selected %s (%s)" model provider)))
 
 (provide 'harp)
 ;;; harp.el ends here

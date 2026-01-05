@@ -25,15 +25,8 @@
   :type 'string
   :group 'harp-api)
 
-(defcustom harp-model-anthropic "claude-opus-4-5-20251101"
-  "Default model for Anthropic."
-  :type 'string
-  :group 'harp-api)
-
-(defcustom harp-model-openai "gpt-5.1-codex-max"
-  "Default model for OpenAI."
-  :type 'string
-  :group 'harp-api)
+(defvar harp-model "claude-sonnet-4-20250514"
+  "Current model - set via `harp-select-model'.")
 
 (defcustom harp-default-provider 'anthropic
   "Default LLM provider."
@@ -49,7 +42,7 @@
 
 (cl-defstruct harp-provider
   "Structure representing an LLM provider."
-  name endpoint api-key-fn model headers-fn request-fn parse-fn tools-fn)
+  name endpoint api-key-fn headers-fn request-fn parse-fn tools-fn)
 
 (defun harp--anthropic-headers ()
   "Return headers for Anthropic API."
@@ -64,7 +57,7 @@
 
 (defun harp--anthropic-request (messages system tools)
   "Build Anthropic request body from MESSAGES, SYSTEM prompt, and TOOLS."
-  (let ((body `(("model" . ,harp-model-anthropic)
+  (let ((body `(("model" . ,harp-model)
                 ("max_tokens" . ,harp-max-tokens)
                 ("stream" . t)
                 ("messages" . ,(vconcat messages)))))
@@ -78,7 +71,7 @@
   "Build OpenAI request body from MESSAGES, SYSTEM prompt, and TOOLS."
   (let* ((sys-msg (when system `((("role" . "system") ("content" . ,system)))))
          (all-msgs (vconcat sys-msg messages))
-         (body `(("model" . ,harp-model-openai)
+         (body `(("model" . ,harp-model)
                  ("max_tokens" . ,harp-max-tokens)
                  ("stream" . t)
                  ("messages" . ,all-msgs))))
@@ -102,7 +95,6 @@
    :name "anthropic"
    :endpoint "https://api.anthropic.com/v1/messages"
    :api-key-fn (lambda () harp-api-key-anthropic)
-   :model harp-model-anthropic
    :headers-fn #'harp--anthropic-headers
    :request-fn #'harp--anthropic-request
    :tools-fn #'harp--anthropic-tools)
@@ -113,7 +105,6 @@
    :name "openai"
    :endpoint "https://api.openai.com/v1/chat/completions"
    :api-key-fn (lambda () harp-api-key-openai)
-   :model harp-model-openai
    :headers-fn #'harp--openai-headers
    :request-fn #'harp--openai-request
    :tools-fn (lambda (tools) (mapcar #'harp--tool-to-openai tools)))
