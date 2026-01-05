@@ -47,3 +47,5 @@ emacs -Q -batch -L . -l harp-test.el --eval "(ert-run-tests-batch-and-exit 'test
 - **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
 - **Compilation**: Ensure byte-compilation succeeds after each code change.
 - **Compilation warnings**: Warnings are acceptable; do not block on them.
+- **Style**: Prefer helper functions (e.g., `cl-labels`) to keep nesting and parenthesis depth shallow.
+- **Compilation workflow**: After changes, byte-compile all `*.el` files; if compilation succeeds, delete the generated `*.elc` files.

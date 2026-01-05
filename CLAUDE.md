@@ -45,3 +45,5 @@ emacs -Q -batch -L . -l harp-test.el --eval "(ert-run-tests-batch-and-exit 'test
 - **Loop**: Identify a concrete product improvement, implement it, review output, commit, then immediately move to the next improvement.
 - **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
 - **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
+- **Style**: Prefer helper functions (e.g., `cl-labels`) to keep nesting and parenthesis depth shallow.
+- **Compilation workflow**: After changes, byte-compile all `*.el` files; if compilation succeeds, delete the generated `*.elc` files.
