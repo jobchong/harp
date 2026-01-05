@@ -26,11 +26,12 @@
 
 ;;; Code:
 
-(require 'harp-api)
-(require 'harp-tools)
-(require 'harp-approval)
-(require 'harp-context)
-(require 'harp-chat)
+(let ((load-prefer-newer t))
+  (require 'harp-api)
+  (require 'harp-tools)
+  (require 'harp-approval)
+  (require 'harp-context)
+  (require 'harp-chat))
 
 ;;; Customization
 
@@ -132,27 +133,14 @@ Left pane is the chat interface, right pane shows files."
   (setq harp-approval-mode mode)
   (message "Approval mode set to %s" mode))
 
-(defvar harp-models
-  '(("claude-opus-4-5-20251101" . anthropic)
-    ("gpt-5.1-codex-max" . openai)
-    ("claude-sonnet-4-20250514" . anthropic)
-    ("claude-3-5-sonnet-20241022" . anthropic)
-    ("claude-3-5-haiku-20241022" . anthropic))
-  "Available models and their providers.")
-
-(defcustom harp-model "claude-sonnet-4-20250514"
-  "Current model to use."
-  :type 'string
-  :group 'harp)
-
 ;;;###autoload
 (defun harp-select-model (model)
   "Select MODEL and automatically set the appropriate provider."
   (interactive
    (list (completing-read
           (format "Model [%s]: " harp-model)
-          (mapcar #'car harp-models) nil t nil nil harp-model)))
-  (let ((provider (alist-get model harp-models nil nil #'string=)))
+          (mapcar #'car harp-model-provider-alist) nil t nil nil harp-model)))
+  (let ((provider (alist-get model harp-model-provider-alist nil nil #'string=)))
     (unless provider
       (user-error "Unknown model: %s" model))
     (setq harp-model model)

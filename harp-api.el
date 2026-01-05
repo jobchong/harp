@@ -25,8 +25,10 @@
   :type 'string
   :group 'harp-api)
 
-(defvar harp-model "claude-sonnet-4-20250514"
-  "Current model - set via `harp-select-model'.")
+(defcustom harp-model "claude-sonnet-4-20250514"
+  "Current model - set via `harp-select-model'."
+  :type 'string
+  :group 'harp-api)
 
 (defcustom harp-default-provider 'anthropic
   "Default LLM provider."
@@ -38,6 +40,15 @@
   :type 'integer
   :group 'harp-api)
 
+(defcustom harp-model-provider-alist
+  '(("claude-opus-4-5-20251101" . anthropic)
+    ("claude-sonnet-4-20250514" . anthropic)
+    ("claude-3-5-sonnet-20241022" . anthropic)
+    ("claude-3-5-haiku-20241022" . anthropic)
+    ("gpt-5.1-codex-max" . openai))
+  "Map model names to providers for automatic routing."
+  :type '(alist :key-type string :value-type symbol)
+  :group 'harp-api)
 (defcustom harp-debug-sse nil
   "When non-nil, log raw SSE lines in *Messages*."
   :type 'boolean
@@ -92,6 +103,32 @@
   (let ((type (if (string= role "assistant") "output_text" "input_text")))
     (vector `((type . ,type) (text . ,text)))))
 
+(defun harp--openai-assistant-content (content)
+  "Convert assistant CONTENT blocks into Responses API content."
+  (cond
+   ((stringp content)
+    (harp--openai-wrap-content "assistant" content))
+   ((vectorp content)
+    (let (blocks)
+      (dolist (block (append content nil))
+        (when (listp block)
+          (pcase (alist-get 'type block)
+            ("text"
+             (when-let ((text (alist-get 'text block)))
+               (push `((type . "output_text") (text . ,text)) blocks)))
+            ("tool_use"
+             (let* ((tool-id (alist-get 'id block))
+                    (name (alist-get 'name block))
+                    (input (alist-get 'input block))
+                    (args (if (stringp input) input (json-encode input))))
+               (push `((type . "tool_call")
+                       (id . ,tool-id)
+                       (name . ,name)
+                       (arguments . ,args))
+                     blocks))))))
+      (vconcat (nreverse blocks))))
+   (t nil)))
+
 (defun harp--openai-normalize-messages (messages system)
   "Convert internal MESSAGES and SYSTEM into OpenAI-compatible messages."
   (let (normalized)
@@ -100,8 +137,8 @@
               ("content" . ,(harp--openai-wrap-content "system" system)))
             normalized))
     (dolist (msg (append messages nil))
-      (let ((role (alist-get 'role msg))
-            (content (alist-get 'content msg)))
+      (let ((role (harp--msg-get 'role msg))
+            (content (harp--msg-get 'content msg)))
         (cond
          ((null role)
           (when harp-debug-sse
@@ -131,6 +168,11 @@
               (push `(("role" . "user")
                       ("content" . ,(harp--openai-wrap-content "user" text)))
                     normalized))))
+         ((string= role "assistant")
+          (when-let ((content-blocks (harp--openai-assistant-content content)))
+            (push `(("role" . "assistant")
+                    ("content" . ,content-blocks))
+                  normalized)))
          (t
           (let ((text (harp--openai-content-text content)))
             (when (and text (not (string-empty-p text)))
@@ -183,10 +225,12 @@
 
 (defun harp-get-provider ()
   "Get the current provider instance."
-  (pcase harp-default-provider
+  (let ((provider (or (alist-get harp-model harp-model-provider-alist nil nil #'string=)
+                      harp-default-provider)))
+    (pcase provider
     ('anthropic harp-provider-anthropic)
     ('openai harp-provider-openai)
-    (_ (error "Unknown provider: %s" harp-default-provider))))
+    (_ (error "Unknown provider: %s" provider)))))
 
 ;;; Streaming
 
@@ -210,6 +254,102 @@
 
 (defvar-local harp--openai-text-seen nil
   "Non-nil when OpenAI Responses stream emitted text content.")
+
+(defvar-local harp--stream-process-pos nil
+  "Position after headers for the current streaming response.")
+
+(defvar-local harp--stream-provider nil
+  "Provider for the current streaming response.")
+
+(defvar-local harp--stream-on-event nil
+  "On-event callback for the current streaming response.")
+
+(defvar-local harp--stream-on-done nil
+  "On-done callback for the current streaming response.")
+
+(defvar-local harp--stream-done-called nil
+  "Non-nil when on-done has been called for the current stream.")
+
+(defvar-local harp--stream-orig-filter nil
+  "Original process filter for the current streaming response.")
+
+(defun harp--stream-call-on-done (payload)
+  "Call on-done with PAYLOAD if configured."
+  (when harp--stream-on-done
+    (funcall harp--stream-on-done payload)))
+
+(defun harp--stream-finalize-error (err)
+  "Finalize the stream with ERR."
+  (unless harp--stream-done-called
+    (setq harp--stream-done-called t)
+    (harp--stream-call-on-done `((error . ,err)))))
+
+(defun harp--stream-finalize-success ()
+  "Finalize the stream successfully."
+  (unless harp--stream-done-called
+    (setq harp--stream-done-called t)
+    (harp--stream-call-on-done (harp--response-payload))))
+
+(defun harp--stream-ensure-process-pos ()
+  "Ensure `harp--stream-process-pos' is set after headers."
+  (unless harp--stream-process-pos
+    (save-excursion
+      (goto-char (point-min))
+      (when (search-forward "\n\n" nil t)
+        (setq harp--stream-process-pos (point))))))
+
+(defun harp--stream-handle-event (event)
+  "Handle a parsed streaming EVENT."
+  (when harp--stream-on-event
+    (funcall harp--stream-on-event event))
+  (pcase (car event)
+    ('error (harp--stream-finalize-error (cdr event)))
+    ('done (harp--stream-finalize-success))))
+
+(defun harp--stream-parse-events ()
+  "Parse any new SSE events from the response buffer."
+  (let* ((new-content (buffer-substring harp--stream-process-pos (point-max)))
+         (events (harp--process-stream-chunk new-content harp--stream-provider)))
+    (when events
+      (message "harp: parsed %d events" (length events)))
+    (setq harp--stream-process-pos (point-max))
+    (dolist (event events)
+      (harp--stream-handle-event event))))
+
+(defun harp--stream-process-filter (proc chunk)
+  "Process filter for streaming responses."
+  (when harp--stream-orig-filter
+    (funcall harp--stream-orig-filter proc chunk))
+  (message "harp: received chunk (%d bytes)" (length chunk))
+  (when (buffer-live-p (process-buffer proc))
+    (with-current-buffer (process-buffer proc)
+      (harp--stream-ensure-process-pos)
+      (when harp--stream-process-pos
+        (harp--stream-parse-events)))))
+
+(defun harp--reset-response-state (&optional streaming)
+  "Reset response state for a new request.
+When STREAMING is non-nil, also reset stream buffer state."
+  (setq harp--current-content "")
+  (setq harp--tool-calls nil)
+  (setq harp--current-tool-call nil)
+  (setq harp--openai-text-seen nil)
+  (when streaming
+    (setq harp--stream-buffer "")))
+
+(defun harp--response-payload ()
+  "Build the standard on-done response payload."
+  `((content . ,harp--current-content)
+    (tool-calls . ,(harp--normalize-tool-calls
+                    (nreverse harp--tool-calls)))))
+
+(defun harp--msg-get (key msg)
+  "Return KEY from MSG, handling symbol or string keys."
+  (if (symbolp key)
+      (or (alist-get key msg)
+          (alist-get (symbol-name key) msg nil nil #'string=))
+    (or (alist-get key msg nil nil #'string=)
+        (alist-get (intern key) msg))))
 
 (defun harp--normalize-tool-calls (tool-calls)
   "Normalize TOOL-CALLS by parsing string inputs into JSON objects."
@@ -453,52 +593,9 @@
 (defvar harp--active-process nil
   "Currently active API process.")
 
-(defun harp-api-call (messages system tools on-event on-done)
-  "Call LLM API with MESSAGES, SYSTEM prompt, and TOOLS.
-ON-EVENT is called with (type . data) for each streaming event.
-ON-DONE is called with (content . tool-calls) when complete."
-  (let* ((provider (harp-get-provider))
-         (url (harp-provider-endpoint provider))
-         (headers (funcall (harp-provider-headers-fn provider)))
-         (body (funcall (harp-provider-request-fn provider)
-                        messages system tools))
-         (url-request-method "POST")
-         (url-request-extra-headers headers)
-         (url-request-data (encode-coding-string (json-encode body) 'utf-8)))
-    ;; Reset state
-    (setq harp--current-content "")
-    (setq harp--tool-calls nil)
-    (setq harp--current-tool-call nil)
-    (setq harp--openai-text-seen nil)
-    ;; Make async request
-    (let ((buf (url-retrieve
-                url
-                (lambda (status)
-                  (if-let ((err (plist-get status :error)))
-                      (funcall on-done `((error . ,(format "%s" err))))
-                    (goto-char (point-min))
-                    (re-search-forward "\n\n" nil t)
-                    (let ((body (buffer-substring (point) (point-max))))
-                      (with-temp-buffer
-                        (insert body)
-                        (goto-char (point-min))
-                        (let ((events (harp--process-stream-chunk
-                                       (buffer-string) provider)))
-                          (dolist (event events)
-                            (when on-event
-                              (funcall on-event event)))
-                          (funcall on-done
-                                   `((content . ,harp--current-content)
-                                     (tool-calls . ,(harp--normalize-tool-calls
-                                                     (nreverse harp--tool-calls))))))))))
-                nil t t)))
-      (setq harp--active-process buf)
-      (when-let ((proc (get-buffer-process buf)))
-        (set-process-query-on-exit-flag proc nil)))))
-
 (defun harp-api-call-streaming (messages system tools on-event on-done)
   "Call LLM API with streaming, processing events as they arrive.
-MESSAGES, SYSTEM, TOOLS as in `harp-api-call'.
+MESSAGES, SYSTEM, TOOLS are used to build the request.
 ON-EVENT called incrementally, ON-DONE when complete."
   ;; Validate API key for current provider
   (pcase harp-default-provider
@@ -514,17 +611,10 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (url-request-method "POST")
          (url-request-extra-headers headers)
          (url-request-data (encode-coding-string (json-encode body) 'utf-8))
-         (response-buffer nil)
-         (process-pos nil)
-         (done-called nil))
+         (response-buffer nil))
     (message "harp: calling %s with model %s" url harp-model)
     ;; Reset state
-    (setq harp--current-content "")
-    (setq harp--tool-calls nil)
-    (setq harp--current-tool-call nil)
-    (setq harp--openai-text-seen nil)
-    (setq harp--stream-buffer "")
-    ;; Make request with process filter for streaming
+    (harp--reset-response-state t)
     (setq response-buffer
           (url-retrieve
            url
@@ -533,63 +623,30 @@ ON-EVENT called incrementally, ON-DONE when complete."
              (message "harp: response buffer contents (first 500 chars): %s"
                       (buffer-substring (point-min) (min (point-max) 500)))
              ;; Fallback: call on-done if not already called via stream
-             (unless done-called
-               (setq done-called t)
-               (when on-done
-                 (if-let ((err (plist-get status :error)))
-                     (funcall on-done `((error . ,(format "%s" err))))
-                   (let* ((body-start (when (re-search-forward "\n\n" nil t)
-                                        (point)))
-                          (body (when body-start
-                                  (buffer-substring body-start (point-max))))
-                          (api-err (and body (harp--extract-error-message body))))
-                     (if api-err
-                         (funcall on-done `((error . ,api-err)))
-                       (funcall on-done
-                                `((content . ,harp--current-content)
-                                  (tool-calls . ,(harp--normalize-tool-calls
-                                                  (nreverse harp--tool-calls)))))))))))
+             (unless harp--stream-done-called
+               (setq harp--stream-done-called t)
+               (if-let ((err (plist-get status :error)))
+                   (harp--stream-finalize-error (format "%s" err))
+                 (let* ((body-start (when (re-search-forward "\n\n" nil t)
+                                      (point)))
+                        (body (when body-start
+                                (buffer-substring body-start (point-max))))
+                        (api-err (and body (harp--extract-error-message body))))
+                   (if api-err
+                       (harp--stream-finalize-error api-err)
+                     (harp--stream-finalize-success))))))
            nil t t))
+    (with-current-buffer response-buffer
+      (setq-local harp--stream-process-pos nil)
+      (setq-local harp--stream-provider provider)
+      (setq-local harp--stream-on-event on-event)
+      (setq-local harp--stream-on-done on-done)
+      (setq-local harp--stream-done-called nil))
     ;; Set up process filter for incremental parsing
     (when-let ((proc (get-buffer-process response-buffer)))
       (set-process-query-on-exit-flag proc nil)
-      (let ((orig-filter (process-filter proc)))
-        (set-process-filter
-         proc
-         (lambda (proc chunk)
-           (when orig-filter
-             (funcall orig-filter proc chunk))
-           (message "harp: received chunk (%d bytes)" (length chunk))
-           (when (buffer-live-p (process-buffer proc))
-             (with-current-buffer (process-buffer proc)
-               (unless process-pos
-                 (save-excursion
-                   (goto-char (point-min))
-                   (when (search-forward "\n\n" nil t)
-                     (setq process-pos (point)))))
-               (when process-pos
-                 (let* ((new-content (buffer-substring process-pos (point-max)))
-                        (events (harp--process-stream-chunk new-content provider)))
-                   (when events
-                     (message "harp: parsed %d events" (length events)))
-                   (setq process-pos (point-max))
-                   (dolist (event events)
-                     (when on-event
-                       (funcall on-event event))
-                     (when (and (eq (car event) 'error)
-                                (not done-called))
-                       (setq done-called t)
-                       (when on-done
-                         (funcall on-done `((error . ,(cdr event))))))
-                     (when (and (eq (car event) 'done)
-                                (not done-called))
-                       (setq done-called t)
-                       (when on-done
-                         (funcall on-done
-                                  `((content . ,harp--current-content)
-                                    (tool-calls . ,(harp--normalize-tool-calls
-                                                    (nreverse harp--tool-calls)))))))))))))))))
-  )
+      (setq-local harp--stream-orig-filter (process-filter proc))
+      (set-process-filter proc #'harp--stream-process-filter))))
 (defun harp-cancel-request ()
   "Cancel any active API request."
   (when (and harp--active-process

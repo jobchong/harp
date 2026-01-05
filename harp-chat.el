@@ -10,6 +10,7 @@
 (require 'harp-tools)
 (require 'harp-approval)
 (require 'harp-context)
+(require 'seq)
 (require 'project)
 
 ;;; Customization
@@ -128,8 +129,14 @@
   "Insert streaming TEXT at the assistant marker."
   (save-excursion
     (goto-char harp-chat--assistant-marker)
-    (insert text)
+    (insert (harp-chat--decode-text text))
     (set-marker harp-chat--assistant-marker (point))))
+
+(defun harp-chat--decode-text (text)
+  "Decode TEXT as UTF-8 if it is unibyte."
+  (if (and (stringp text) (not (multibyte-string-p text)))
+      (decode-coding-string text 'utf-8)
+    text))
 
 (defun harp-chat--insert-tool-call (name input)
   "Insert a tool call display for NAME with INPUT."
@@ -239,8 +246,14 @@
   "Make API call with current messages."
   (let* ((context (harp-context-gather harp-chat--file-buffer))
          (system (harp-context-build-system-prompt context))
-         (tools (harp-get-tool-schemas))
-         (messages (reverse harp-chat--messages)))
+         (messages (reverse harp-chat--messages))
+         (last-user (car (last (seq-filter (lambda (m)
+                                             (string= (harp--msg-get 'role m) "user"))
+                                           messages))))
+         (input (and last-user (harp--msg-get 'content last-user)))
+         (tools (if (harp-chat--should-use-tools input)
+                    (harp-get-tool-schemas)
+                  nil)))
     (harp-api-call-streaming
      messages system tools
      ;; On event
@@ -280,6 +293,18 @@
   "Execute TOOL-CALLS sequentially with approval handling."
   (setq harp-chat--pending-tool-results nil)
   (harp-chat--execute-next-tool tool-calls))
+
+(defun harp-chat--should-use-tools (input)
+  "Return non-nil if INPUT should enable tools."
+  (when (stringp input)
+    (let* ((text (downcase input))
+           (tool-hints '("file" "directory" "folder" "project" "repo" "path"
+                         "search" "grep" "read" "write" "edit" "run"
+                         "shell" "command" "open" "list" "tree" "status"
+                         "git" "error" "stack trace" "stacktrace"))
+           (contains-hint (seq-some (lambda (h) (string-match-p (regexp-quote h) text))
+                                    tool-hints)))
+      contains-hint)))
 
 (defun harp-chat--execute-next-tool (remaining-tools)
   "Execute next tool in REMAINING-TOOLS list."
