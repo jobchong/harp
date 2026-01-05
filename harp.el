@@ -134,12 +134,10 @@ Left pane is the chat interface, right pane shows files."
 
 (defvar harp-models
   '(("claude-opus-4-5-20251101" . anthropic)
+    ("gpt-5.1-codex-max" . openai)
     ("claude-sonnet-4-20250514" . anthropic)
     ("claude-3-5-sonnet-20241022" . anthropic)
-    ("claude-3-5-haiku-20241022" . anthropic)
-    ("gpt-4o" . openai)
-    ("gpt-4-turbo" . openai)
-    ("o1-preview" . openai))
+    ("claude-3-5-haiku-20241022" . anthropic))
   "Available models and their providers.")
 
 (defcustom harp-model "claude-sonnet-4-20250514"
