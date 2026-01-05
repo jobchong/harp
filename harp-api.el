@@ -259,27 +259,29 @@ ON-DONE is called with (content . tool-calls) when complete."
     (setq harp--tool-calls nil)
     (setq harp--current-tool-call nil)
     ;; Make async request
-    (setq harp--active-process
-          (url-retrieve
-           url
-           (lambda (status)
-             (if-let ((err (plist-get status :error)))
-                 (funcall on-done `((error . ,(format "%s" err))))
-               (goto-char (point-min))
-               (re-search-forward "\n\n" nil t)
-               (let ((body (buffer-substring (point) (point-max))))
-                 (with-temp-buffer
-                   (insert body)
-                   (goto-char (point-min))
-                   (let ((events (harp--process-stream-chunk
-                                  (buffer-string) provider)))
-                     (dolist (event events)
-                       (when on-event
-                         (funcall on-event event)))
-                     (funcall on-done
-                              `((content . ,harp--current-content)
-                                (tool-calls . ,(nreverse harp--tool-calls)))))))))
-           nil t t))))
+    (let ((buf (url-retrieve
+                url
+                (lambda (status)
+                  (if-let ((err (plist-get status :error)))
+                      (funcall on-done `((error . ,(format "%s" err))))
+                    (goto-char (point-min))
+                    (re-search-forward "\n\n" nil t)
+                    (let ((body (buffer-substring (point) (point-max))))
+                      (with-temp-buffer
+                        (insert body)
+                        (goto-char (point-min))
+                        (let ((events (harp--process-stream-chunk
+                                       (buffer-string) provider)))
+                          (dolist (event events)
+                            (when on-event
+                              (funcall on-event event)))
+                          (funcall on-done
+                                   `((content . ,harp--current-content)
+                                     (tool-calls . ,(nreverse harp--tool-calls)))))))))
+                nil t t)))
+      (setq harp--active-process buf)
+      (when-let ((proc (get-buffer-process buf)))
+        (set-process-query-on-exit-flag proc nil)))))
 
 (defun harp-api-call-streaming (messages system tools on-event on-done)
   "Call LLM API with streaming, processing events as they arrive.
@@ -318,6 +320,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
            nil t t))
     ;; Set up process filter for incremental parsing
     (when-let ((proc (get-buffer-process response-buffer)))
+      (set-process-query-on-exit-flag proc nil)
       (set-process-filter
        proc
        (lambda (proc chunk)
@@ -348,6 +351,20 @@ ON-EVENT called incrementally, ON-DONE when complete."
              (process-live-p harp--active-process))
     (delete-process harp--active-process)
     (setq harp--active-process nil)))
+
+(defun harp--cleanup-connections ()
+  "Kill any open API connections."
+  (harp-cancel-request)
+  ;; Kill any lingering url-retrieve buffers/processes
+  (dolist (buf (buffer-list))
+    (when (string-match-p "^\\*http.*api\\." (buffer-name buf))
+      (let ((proc (get-buffer-process buf)))
+        (when (and proc (process-live-p proc))
+          (set-process-query-on-exit-flag proc nil)
+          (delete-process proc)))
+      (kill-buffer buf))))
+
+(add-hook 'kill-emacs-hook #'harp--cleanup-connections)
 
 ;;; Message building helpers
 
