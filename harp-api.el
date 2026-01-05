@@ -87,29 +87,18 @@
      ""))
    (t "")))
 
-(defun harp--openai-extract-tool-calls (content)
-  "Extract OpenAI tool calls from CONTENT blocks."
-  (when (vectorp content)
-    (let (tool-calls)
-      (dolist (block (append content nil))
-        (when (and (listp block)
-                   (string= (alist-get 'type block) "tool_use"))
-          (let* ((id (alist-get 'id block))
-                 (name (alist-get 'name block))
-                 (input (alist-get 'input block))
-                 (args (if (stringp input) input (json-encode input))))
-            (push `((id . ,id)
-                    (type . "function")
-                    ("function" . (("name" . ,name)
-                                   ("arguments" . ,args))))
-                  tool-calls))))
-      (nreverse tool-calls))))
+(defun harp--openai-wrap-content (role text)
+  "Build a Responses API content array for ROLE with TEXT."
+  (let ((type (if (string= role "assistant") "output_text" "input_text")))
+    (vector `((type . ,type) (text . ,text)))))
 
 (defun harp--openai-normalize-messages (messages system)
   "Convert internal MESSAGES and SYSTEM into OpenAI-compatible messages."
   (let (normalized)
     (when system
-      (push `(("role" . "system") ("content" . ,system)) normalized))
+      (push `(("role" . "system")
+              ("content" . ,(harp--openai-wrap-content "system" system)))
+            normalized))
     (dolist (msg (append messages nil))
       (let ((role (alist-get 'role msg))
             (content (alist-get 'content msg)))
@@ -118,32 +107,36 @@
           (when harp-debug-sse
             (message "harp: skipping message without role: %S" msg)))
          ((and (string= role "user") (vectorp content))
-          (dolist (block (append content nil))
-            (when (and (listp block)
-                       (string= (alist-get 'type block) "tool_result"))
-              (let ((tool-id (alist-get 'tool_use_id block))
-                    (result (alist-get 'content block)))
-                (push `(("role" . "tool")
-                        ("tool_call_id" . ,tool-id)
-                        ("content" . ,(if (stringp result)
-                                          result
-                                        (format "%s" result))))
-                      normalized))))
+          (let (text)
+            (dolist (block (append content nil))
+              (cond
+               ((and (listp block)
+                     (string= (alist-get 'type block) "tool_result"))
+                (let ((tool-id (alist-get 'tool_use_id block))
+                      (result (alist-get 'content block)))
+                  (push `(("role" . "tool")
+                          ("tool_call_id" . ,tool-id)
+                          ("content" . ,(harp--openai-wrap-content
+                                         "assistant"
+                                         (if (stringp result)
+                                             result
+                                           (format "%s" result)))))
+                        normalized)))
+               ((and (listp block)
+                     (string= (alist-get 'type block) "text"))
+                (let ((chunk (alist-get 'text block)))
+                  (when (stringp chunk)
+                    (setq text (concat text chunk)))))))
+            (when (and text (not (string-empty-p text)))
+              (push `(("role" . "user")
+                      ("content" . ,(harp--openai-wrap-content "user" text)))
+                    normalized))))
+         (t
           (let ((text (harp--openai-content-text content)))
             (when (and text (not (string-empty-p text)))
-              (push `(("role" . "user") ("content" . ,text)) normalized))))
-         ((string= role "assistant")
-          (let* ((text (harp--openai-content-text content))
-                 (tool-calls (harp--openai-extract-tool-calls content))
-                 (entry `(("role" . "assistant")
-                          ("content" . ,text))))
-            (when tool-calls
-              (push `("tool_calls" . ,(vconcat tool-calls)) entry))
-            (push entry normalized)))
-         (t
-          (push `(("role" . ,role)
-                  ("content" . ,(harp--openai-content-text content)))
-                normalized)))))
+              (push `(("role" . ,role)
+                      ("content" . ,(harp--openai-wrap-content role text)))
+                    normalized)))))))
     (nreverse normalized)))
 
 (defun harp--openai-request (messages system tools)
@@ -522,7 +515,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (url-request-extra-headers headers)
          (url-request-data (encode-coding-string (json-encode body) 'utf-8))
          (response-buffer nil)
-         (process-pos 1)
+         (process-pos nil)
          (done-called nil))
     (message "harp: calling %s with model %s" url harp-model)
     ;; Reset state
@@ -557,42 +550,46 @@ ON-EVENT called incrementally, ON-DONE when complete."
                                   (tool-calls . ,(harp--normalize-tool-calls
                                                   (nreverse harp--tool-calls)))))))))))
            nil t t))
-  ;; Set up process filter for incremental parsing
-  (when-let ((proc (get-buffer-process response-buffer)))
-    (set-process-query-on-exit-flag proc nil)
-    (set-process-filter
-     proc
-     (lambda (proc chunk)
-       (message "harp: received chunk (%d bytes)" (length chunk))
-       ;; Default filter behavior
-       (when (buffer-live-p (process-buffer proc))
-         (with-current-buffer (process-buffer proc)
-           (goto-char (point-max))
-           (insert chunk)
-           ;; Process new content
-           (let* ((new-content (buffer-substring process-pos (point-max)))
-                  (events (harp--process-stream-chunk new-content provider)))
-             (when events (message "harp: parsed %d events" (length events)))
-             (setq process-pos (point-max))
-             (dolist (event events)
-               (when on-event
-                 (funcall on-event event))
-               (when (and (eq (car event) 'error)
-                          (not done-called))
-                 (setq done-called t)
-                 (when on-done
-                   (funcall on-done `((error . ,(cdr event))))))
-               ;; Call on-done when stream signals completion
-               (when (and (eq (car event) 'done)
-                          (not done-called))
-                 (setq done-called t)
-                 (when on-done
-                   (funcall on-done
-                            `((content . ,harp--current-content)
-                              (tool-calls . ,(harp--normalize-tool-calls
-                                              (nreverse harp--tool-calls)))))))))))))))
+    ;; Set up process filter for incremental parsing
+    (when-let ((proc (get-buffer-process response-buffer)))
+      (set-process-query-on-exit-flag proc nil)
+      (let ((orig-filter (process-filter proc)))
+        (set-process-filter
+         proc
+         (lambda (proc chunk)
+           (when orig-filter
+             (funcall orig-filter proc chunk))
+           (message "harp: received chunk (%d bytes)" (length chunk))
+           (when (buffer-live-p (process-buffer proc))
+             (with-current-buffer (process-buffer proc)
+               (unless process-pos
+                 (save-excursion
+                   (goto-char (point-min))
+                   (when (search-forward "\n\n" nil t)
+                     (setq process-pos (point)))))
+               (when process-pos
+                 (let* ((new-content (buffer-substring process-pos (point-max)))
+                        (events (harp--process-stream-chunk new-content provider)))
+                   (when events
+                     (message "harp: parsed %d events" (length events)))
+                   (setq process-pos (point-max))
+                   (dolist (event events)
+                     (when on-event
+                       (funcall on-event event))
+                     (when (and (eq (car event) 'error)
+                                (not done-called))
+                       (setq done-called t)
+                       (when on-done
+                         (funcall on-done `((error . ,(cdr event))))))
+                     (when (and (eq (car event) 'done)
+                                (not done-called))
+                       (setq done-called t)
+                       (when on-done
+                         (funcall on-done
+                                  `((content . ,harp--current-content)
+                                    (tool-calls . ,(harp--normalize-tool-calls
+                                                    (nreverse harp--tool-calls)))))))))))))))))
   )
-
 (defun harp-cancel-request ()
   "Cancel any active API request."
   (when (and harp--active-process
