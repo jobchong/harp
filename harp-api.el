@@ -287,6 +287,12 @@ ON-DONE is called with (content . tool-calls) when complete."
   "Call LLM API with streaming, processing events as they arrive.
 MESSAGES, SYSTEM, TOOLS as in `harp-api-call'.
 ON-EVENT called incrementally, ON-DONE when complete."
+  ;; Validate API key for current provider
+  (pcase harp-default-provider
+    ('anthropic (unless harp-api-key-anthropic
+                  (user-error "Set `harp-api-key-anthropic' first")))
+    ('openai (unless harp-api-key-openai
+               (user-error "Set `harp-api-key-openai' first"))))
   (let* ((provider (harp-get-provider))
          (url (harp-provider-endpoint provider))
          (headers (funcall (harp-provider-headers-fn provider)))
@@ -298,6 +304,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (response-buffer nil)
          (process-pos 1)
          (done-called nil))
+    (message "harp: calling %s with model %s" url harp-model)
     ;; Reset state
     (setq harp--current-content "")
     (setq harp--tool-calls nil)
