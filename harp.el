@@ -34,6 +34,14 @@
   (require 'harp-context)
   (require 'harp-chat))
 
+(eval-when-compile
+  (declare-function harp-chat-setup-buffer "harp-chat")
+  (declare-function harp-chat-set-file-buffer "harp-chat")
+  (declare-function harp--cleanup-connections "harp-api"))
+
+(defvar harp-chat-buffer-name)
+(defvar harp-approval-mode)
+
 ;;; Customization
 
 (defgroup harp nil
