@@ -42,7 +42,7 @@ emacs -Q -batch -L . -l harp-test.el --eval "(ert-run-tests-batch-and-exit 'test
 ## Autonomy loop expectations
 
 - **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
-- **Loop**: Identify a concrete product improvement, implement it, review output, commit, then immediately move to the next improvement.
+- **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.
 - **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
 - **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
 - **Compilation**: Ensure byte-compilation succeeds after each code change.
