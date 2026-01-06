@@ -422,7 +422,8 @@ When STREAMING is non-nil, also reset stream buffer state."
               (let ((json-part (alist-get 'partial_json delta)))
                 (setf (alist-get 'input harp--current-tool-call)
                       (concat (alist-get 'input harp--current-tool-call)
-                              json-part))))))))
+                              json-part))))
+            nil))))
       ("content_block_stop"
        (when harp--current-tool-call
          (let ((tool-call harp--current-tool-call))
@@ -524,13 +525,14 @@ When STREAMING is non-nil, also reset stream buffer state."
       ("response.output_item.added"
        (let ((item (alist-get 'item event)))
          (cond
-          ((and (listp item)
-                (string= (alist-get 'type item) "function_call"))
+         ((and (listp item)
+               (string= (alist-get 'type item) "function_call"))
            (let* ((tool-id (alist-get 'id item))
                   (name (alist-get 'name item))
                   (args (or (alist-get 'arguments item) "")))
              (let ((tc (harp--openai-ensure-tool-call tool-id name)))
-               (setf (alist-get 'input tc) args))))
+               (setf (alist-get 'input tc) args)
+               nil)))
           ((and (listp item)
                 (string= (alist-get 'type item) "message")
                 (not harp--openai-text-seen))
@@ -559,7 +561,8 @@ When STREAMING is non-nil, also reset stream buffer state."
          (when (and tool-id (stringp delta))
            (let ((tc (harp--openai-ensure-tool-call tool-id nil)))
              (setf (alist-get 'input tc)
-                   (concat (alist-get 'input tc) delta))))))
+                   (concat (alist-get 'input tc) delta))))
+         nil))
       ("response.function_call_arguments.done"
        (let* ((tool-id (alist-get 'item_id event))
               (args (or (alist-get 'arguments event) "")))
@@ -574,7 +577,8 @@ When STREAMING is non-nil, also reset stream buffer state."
          (when (and tool-id (stringp delta))
            (let ((tc (harp--openai-ensure-tool-call tool-id nil)))
              (setf (alist-get 'input tc)
-                   (concat (alist-get 'input tc) delta))))))
+                   (concat (alist-get 'input tc) delta))))
+         nil))
       ("response.output_tool_call.done"
        (let* ((tool-id (or (alist-get 'item_id event) (alist-get 'id event)))
               (args (or (alist-get 'arguments event) "")))
