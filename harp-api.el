@@ -419,19 +419,21 @@ When STREAMING is non-nil, also reset stream buffer state."
               (cons 'text text)))
            ("input_json_delta"
             (when harp--current-tool-call
-              (let ((json-part (alist-get 'partial_json delta)))
+              (let* ((json-part (or (alist-get 'partial_json delta) ""))
+                     (current (alist-get 'input harp--current-tool-call))
+                     (current-str (if (stringp current) current "")))
                 (setf (alist-get 'input harp--current-tool-call)
-                      (concat (alist-get 'input harp--current-tool-call)
-                              json-part))))
+                      (concat current-str json-part))))
             nil))))
       ("content_block_stop"
        (when harp--current-tool-call
          (let ((tool-call harp--current-tool-call))
            ;; Parse accumulated JSON input
-           (condition-case nil
-               (setf (alist-get 'input tool-call)
-                     (json-read-from-string (alist-get 'input tool-call)))
-             (error nil))
+           (when (stringp (alist-get 'input tool-call))
+             (condition-case nil
+                 (setf (alist-get 'input tool-call)
+                       (json-read-from-string (alist-get 'input tool-call)))
+               (error nil)))
            (push tool-call harp--tool-calls)
            (setq harp--current-tool-call nil)
            (cons 'tool-call tool-call))))
