@@ -60,8 +60,7 @@
 (defun harp--tool-path-from-alist (alist)
   "Return path value from ALIST if present."
   (or (alist-get 'path alist)
-      (when (stringp (car (car-safe alist)))
-        (cdr (assoc-string "path" alist t)))))
+      (alist-get "path" alist nil nil #'string=)))
 
 (defun harp--tool-path-from-plist (plist)
   "Return path value from PLIST if present."
@@ -69,25 +68,21 @@
       (plist-get plist 'path)
       (plist-get plist "path")))
 
-(defun harp--tool-path-target (input)
-  "Return a path string or buffer from INPUT for later normalization."
-  (let* ((normalized (harp--coerce-tool-input input))
-         (value (cond
-                 ((or (stringp normalized) (bufferp normalized)) normalized)
-                 ((and (listp normalized) (consp (car normalized)))
-                  (harp--tool-path-from-alist normalized))
-                 ((listp normalized)
-                  (harp--tool-path-from-plist normalized))
-                 (t normalized))))
-    value))
+(defun harp--tool-extract-path (input)
+  "Extract a path value (string or buffer) from INPUT."
+  (let* ((normalized (harp--coerce-tool-input input)))
+    (cond
+     ((or (stringp normalized) (bufferp normalized)) normalized)
+     ((and (listp normalized) (consp (car normalized)))
+      (harp--tool-path-from-alist normalized))
+     ((listp normalized)
+      (harp--tool-path-from-plist normalized))
+     (t nil))))
 
 (defun harp--resolve-read-path (input)
   "Resolve INPUT to an existing file path if possible."
-  (let* ((target (harp--tool-path-target input))
-         (path (cond
-                ((bufferp target) (buffer-file-name target))
-                ((stringp target) (expand-file-name target))
-                (t nil))))
+  (let* ((value (harp--tool-extract-path input))
+         (path (harp--normalize-tool-path value)))
     (unless (stringp path)
       (error "read_file requires a file path"))
     (if (file-exists-p path)
@@ -104,7 +99,7 @@
 
 (defun harp--tool-input-path (input)
   "Extract a path from INPUT and normalize it."
-  (let ((value (harp--tool-path-target input)))
+  (let ((value (harp--tool-extract-path input)))
     (harp--normalize-tool-path value)))
 
 (defun harp-register-tool (name description input-schema handler)
