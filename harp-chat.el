@@ -34,6 +34,11 @@
   "Face for tool calls and results."
   :group 'harp-chat)
 
+(defface harp-status-face
+  '((t :inherit shadow))
+  "Face for assistant status lines."
+  :group 'harp-chat)
+
 (defface harp-prompt-face
   '((t :inherit minibuffer-prompt :weight bold))
   "Face for the input prompt."
@@ -66,6 +71,15 @@
 (defvar-local harp-chat--processing nil
   "Non-nil when waiting for API response.")
 
+(defvar-local harp-chat--status-start nil
+  "Marker for the start of the assistant status line.")
+
+(defvar-local harp-chat--status-end nil
+  "Marker for the end of the assistant status line.")
+
+(defvar-local harp-chat--status-text nil
+  "Current status text for the assistant response.")
+
 (defvar-local harp-chat--pending-tool-results nil
   "Alist of (tool-use-id . result) for pending tool results.")
 
@@ -94,6 +108,8 @@
 \\{harp-chat-mode-map}"
   (setq-local harp-chat--input-marker (make-marker))
   (setq-local harp-chat--assistant-marker (make-marker))
+  (setq-local harp-chat--status-start (make-marker))
+  (setq-local harp-chat--status-end (make-marker))
   (setq-local harp-chat--messages nil)
   (setq-local harp-chat--processing nil)
   (setq-local harp-chat--pending-tool-results nil)
@@ -123,10 +139,60 @@
 (defun harp-chat--insert-assistant-start ()
   "Insert the start of an assistant message and set up streaming marker."
   (insert (propertize "Assistant: " 'face 'harp-assistant-face))
+  (insert "\n")
+  (let ((start (point)))
+    (insert (propertize "Status: thinking..." 'face 'harp-status-face))
+    (let ((end (point)))
+      (insert "\n")
+      (set-marker harp-chat--status-start start)
+      (set-marker harp-chat--status-end end)
+      (setq harp-chat--status-text "thinking...")))
   (set-marker harp-chat--assistant-marker (point)))
+
+(defun harp-chat--set-status (text)
+  "Update the status line for the current assistant response."
+  (when (and harp-chat--status-start harp-chat--status-end)
+    (setq harp-chat--status-text text)
+    (save-excursion
+      (goto-char harp-chat--status-start)
+      (delete-region harp-chat--status-start harp-chat--status-end)
+      (insert (propertize (format "Status: %s" text) 'face 'harp-status-face))
+      (set-marker harp-chat--status-end (point)))))
+
+(defun harp-chat--set-status-if-default (text)
+  "Update the status line when it is still on a default value."
+  (when (member harp-chat--status-text
+                '("thinking..." "drafting response..." "running tools..."))
+    (harp-chat--set-status text)))
+
+(defun harp-chat--status-from-input (input)
+  "Extract a status summary from INPUT."
+  (cond
+   ((stringp input)
+    (let ((trimmed (string-trim input)))
+      (if (and (not (string-empty-p trimmed))
+               (or (string-prefix-p "{" trimmed)
+                   (string-prefix-p "[" trimmed)))
+          (condition-case nil
+              (let* ((json-object-type 'alist)
+                     (json-array-type 'list)
+                     (json-false nil)
+                     (json-null nil)
+                     (parsed (json-read-from-string trimmed)))
+                (or (alist-get 'summary parsed)
+                    (alist-get 'status parsed)
+                    input))
+            (error input))
+        input)))
+   ((and (listp input) (alist-get 'summary input)) (alist-get 'summary input))
+   ((and (listp input) (alist-get 'status input)) (alist-get 'status input))
+   (t nil)))
 
 (defun harp-chat--insert-streaming-text (text)
   "Insert streaming TEXT at the assistant marker."
+  (when (and (stringp text)
+             (string= harp-chat--status-text "thinking..."))
+    (harp-chat--set-status "drafting response..."))
   (save-excursion
     (goto-char harp-chat--assistant-marker)
     (insert (harp-chat--decode-text text))
@@ -140,29 +206,33 @@
 
 (defun harp-chat--insert-tool-call (name input)
   "Insert a tool call display for NAME with INPUT."
-  (save-excursion
-    (goto-char harp-chat--assistant-marker)
-    (insert "\n" (propertize (format "[Tool: %s]" name) 'face 'harp-tool-face))
-    (when input
-      (let ((input-str (if (stringp input)
-                           input
-                         (json-encode input))))
-        (when (> (length input-str) 200)
-          (setq input-str (concat (substring input-str 0 200) "...")))
-        (insert " " input-str)))
-    (insert "\n")
-    (set-marker harp-chat--assistant-marker (point))))
+  (if (string= name "set_status")
+      (when-let ((summary (harp-chat--status-from-input input)))
+        (harp-chat--set-status (string-trim summary)))
+    (save-excursion
+      (goto-char harp-chat--assistant-marker)
+      (insert "\n" (propertize (format "[Tool: %s]" name) 'face 'harp-tool-face))
+      (when input
+        (let ((input-str (if (stringp input)
+                             input
+                           (json-encode input))))
+          (when (> (length input-str) 200)
+            (setq input-str (concat (substring input-str 0 200) "...")))
+          (insert " " input-str)))
+      (insert "\n")
+      (set-marker harp-chat--assistant-marker (point)))))
 
 (defun harp-chat--insert-tool-result (name result)
   "Insert tool RESULT display for tool NAME."
-  (save-excursion
-    (goto-char harp-chat--assistant-marker)
-    (let ((result-str (if (> (length result) 500)
-                          (concat (substring result 0 500) "\n... [truncated]")
-                        result)))
-      (insert (propertize (format "[Result: %s]\n" name) 'face 'harp-tool-face))
-      (insert result-str "\n"))
-    (set-marker harp-chat--assistant-marker (point))))
+  (unless (string= name "set_status")
+    (save-excursion
+      (goto-char harp-chat--assistant-marker)
+      (let ((result-str (if (> (length result) 500)
+                            (concat (substring result 0 500) "\n... [truncated]")
+                          result)))
+        (insert (propertize (format "[Result: %s]\n" name) 'face 'harp-tool-face))
+        (insert result-str "\n"))
+      (set-marker harp-chat--assistant-marker (point)))))
 
 (defun harp-chat--show-approval ()
   "Display approval prompt for pending tool execution."
@@ -188,6 +258,7 @@
 
 (defun harp-chat--finish-response ()
   "Clean up after response is complete."
+  (harp-chat--set-status-if-default "done")
   (goto-char harp-chat--assistant-marker)
   (insert "\n")
   (harp-chat--insert-prompt)
@@ -253,7 +324,8 @@
          (input (and last-user (harp--msg-get 'content last-user)))
          (tools (if (harp-chat--should-use-tools input)
                     (harp-get-tool-schemas)
-                  nil)))
+                  (when-let ((status-tool (harp-get-tool-schema "set_status")))
+                    (list status-tool)))))
     (harp-api-call-streaming
      messages system tools
      ;; On event
@@ -291,6 +363,7 @@
 
 (defun harp-chat--execute-tools (tool-calls)
   "Execute TOOL-CALLS sequentially with approval handling."
+  (harp-chat--set-status-if-default "running tools...")
   (setq harp-chat--pending-tool-results nil)
   (harp-chat--execute-next-tool tool-calls))
 

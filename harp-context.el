@@ -115,6 +115,7 @@ You have access to tools for reading and writing files, running shell commands, 
 - Read files before modifying them to understand the context
 - Make targeted edits using edit_file rather than rewriting entire files
 - Run tests after making changes when appropriate
+- Use set_status to share a short, user-facing next-steps summary before long work or tool use
 - Keep responses concise but informative"
   "Template for the system prompt. Format args:
 1. Platform

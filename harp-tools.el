@@ -16,6 +16,9 @@
 (defvar harp-tools-schemas nil
   "List of tool schemas for API calls.")
 
+(defvar harp-internal-tools '("set_status")
+  "List of tools used for UI/status updates that should not prompt for approval.")
+
 (defun harp-register-tool (name description input-schema handler)
   "Register a tool with NAME, DESCRIPTION, INPUT-SCHEMA, and HANDLER function."
   (setf (alist-get name harp-tools-alist nil nil #'string=) handler)
@@ -39,6 +42,16 @@
 (defun harp-get-tool-schemas ()
   "Return list of tool schemas for API calls."
   harp-tools-schemas)
+
+(defun harp-get-tool-schema (name)
+  "Return tool schema by NAME, or nil if not found."
+  (cl-find-if (lambda (schema)
+                (string= (alist-get 'name schema) name))
+              harp-tools-schemas))
+
+(defun harp-tool-internal-p (name)
+  "Return non-nil if tool NAME is an internal UI/status tool."
+  (member name harp-internal-tools))
 
 ;;; File display hook
 
@@ -67,6 +80,18 @@ Used to display files in the file pane.")
            (insert-file-contents path)
            (buffer-string))
        (format "File not found: %s" path)))))
+
+;;; Tool: set_status
+
+(harp-register-tool
+ "set_status"
+ "Update the user-visible status line with a short next-steps summary."
+ '((type . "object")
+   (properties . ((summary . ((type . "string")
+                              (description . "Short user-facing status or next steps")))))
+   (required . ["summary"]))
+ (lambda (_input)
+   "OK"))
 
 ;;; Tool: write_file
 

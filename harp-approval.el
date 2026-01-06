@@ -11,6 +11,7 @@
 ;; Forward declarations to avoid circular dependency
 (declare-function harp-tool-dangerous-p "harp-tools")
 (declare-function harp-execute-tool "harp-tools")
+(declare-function harp-tool-internal-p "harp-tools")
 
 ;;; Customization
 
@@ -55,12 +56,14 @@ Project root should be an absolute path string."
 
 (defun harp-approval-needed-p (tool-name)
   "Return non-nil if TOOL-NAME requires approval in current context."
-  (let ((mode (harp-approval-get-mode)))
-    (pcase mode
-      ('none nil)
-      ('dangerous-only (harp-tool-dangerous-p tool-name))
-      ('full t)
-      (_ nil))))
+  (if (harp-tool-internal-p tool-name)
+      nil
+    (let ((mode (harp-approval-get-mode)))
+      (pcase mode
+        ('none nil)
+        ('dangerous-only (harp-tool-dangerous-p tool-name))
+        ('full t)
+        (_ nil)))))
 
 (defun harp-approval-request (tool-name input callback)
   "Request approval for TOOL-NAME with INPUT.
