@@ -314,6 +314,12 @@
       (message "harp: parsed %d events" (length events)))
     (setq harp--stream-process-pos (point-max))
     (dolist (event events)
+      (when (eq (car event) 'text)
+        (message "harp: text event (%d chars)" (length (cdr event))))
+      (when (eq (car event) 'tool-call)
+        (let ((tc (cdr event)))
+          (message "harp: tool call %s"
+                   (or (alist-get 'name tc) "<unknown>"))))
       (harp--stream-handle-event event))))
 
 (defun harp--stream-process-filter (proc chunk)
@@ -610,6 +616,10 @@ When STREAMING is non-nil, also reset stream buffer state."
       (when harp-debug-sse
         (message "harp: sse line: %s" line))
       (when-let ((event (harp--parse-sse-line line provider)))
+        (when harp-debug-sse
+          (let ((etype (alist-get 'type event)))
+            (when etype
+              (message "harp: sse event type=%s" etype))))
         (let ((result (pcase (harp-provider-name provider)
                         ("anthropic" (harp--handle-anthropic-event event))
                         ("openai" (harp--handle-openai-event event)))))
