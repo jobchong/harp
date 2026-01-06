@@ -7,6 +7,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'subr-x)
 
 ;;; Tool registry
 
@@ -19,6 +20,27 @@
 (defvar harp-internal-tools '("set_status")
   "List of tools used for UI/status updates that should not prompt for approval.")
 
+(defun harp--coerce-tool-input (input)
+  "Coerce INPUT into a usable representation for tool handlers."
+  (cond
+   ((null input) nil)
+   ((bufferp input) `((path . ,input)))
+   ((listp input) input)
+   ((stringp input)
+    (let ((trimmed (string-trim input)))
+      (if (and (not (string-empty-p trimmed))
+               (or (string-prefix-p "{" trimmed)
+                   (string-prefix-p "[" trimmed)))
+          (condition-case nil
+              (let ((json-object-type 'alist)
+                    (json-array-type 'list)
+                    (json-false nil)
+                    (json-null nil))
+                (json-read-from-string trimmed))
+            (error input))
+        input)))
+   (t input)))
+
 (defun harp--normalize-tool-path (value)
   "Normalize VALUE into a usable path string."
   (cond
@@ -30,10 +52,11 @@
 
 (defun harp--tool-input-path (input)
   "Extract a path from INPUT and normalize it."
-  (let ((value (if (listp input)
-                   (or (alist-get 'path input)
-                       (alist-get "path" input nil nil #'string=))
-                 input)))
+  (let* ((normalized (harp--coerce-tool-input input))
+         (value (if (listp normalized)
+                    (or (alist-get 'path normalized)
+                        (alist-get "path" normalized nil nil #'string=))
+                  normalized)))
     (harp--normalize-tool-path value)))
 
 (defun harp-register-tool (name description input-schema handler)
@@ -90,33 +113,16 @@ Used to display files in the file pane.")
                            (description . "Absolute path to the file to read")))))
    (required . ["path"]))
  (lambda (input)
-   (let* ((buffer-input (cond
-                         ((bufferp input) input)
-                         ((and (listp input) (bufferp (alist-get 'path input)))
-                          (alist-get 'path input))
-                         ((and (listp input)
-                               (bufferp (alist-get "path" input nil nil #'string=)))
-                          (alist-get "path" input nil nil #'string=))
-                         (t nil)))
-          (path (unless buffer-input
-                  (condition-case nil
-                      (harp--tool-input-path input)
-                    (error nil)))))
-     (cond
-      (buffer-input
-       (harp--notify-file-access
-        (or (buffer-file-name buffer-input) (buffer-name buffer-input)))
-       (with-current-buffer buffer-input
-         (buffer-string)))
-      ((not path)
-       "read_file requires a valid path")
-      (t
-       (harp--notify-file-access path)
-       (if (file-exists-p path)
-           (with-temp-buffer
-             (insert-file-contents path)
-             (buffer-string))
-         (format "File not found: %s" path)))))))
+   (condition-case err
+       (let ((path (harp--tool-input-path input)))
+         (harp--notify-file-access path)
+         (if (file-exists-p path)
+             (with-temp-buffer
+               (insert-file-contents path)
+               (buffer-string))
+           (format "File not found: %s" path)))
+     (error (format "read_file requires a valid path: %s"
+                    (error-message-string err))))))
 
 ;;; Tool: set_status
 
