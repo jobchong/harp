@@ -265,79 +265,45 @@ Used to display files in the file pane.")
 
 ;;; Tool: run_shell
 
-(harp-register-tool
- "run_shell"
- "Execute a shell command and return its output."
- '((type . "object")
-   (properties . ((command . ((type . "string")
-                              (description . "Shell command to execute")))
-                  (cwd . ((type . "string")
-                          (description . "Working directory for the command (optional)")))))
-   (required . ["command"]))
- (lambda (input)
-   (let* ((command (alist-get 'command input))
-          (cwd (or (alist-get 'cwd input) default-directory))
-          (default-directory cwd))
-     (with-temp-buffer
-       (let ((exit-code (call-process-shell-command command nil t nil)))
-         (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
+(defconst harp--shell-tool-schema
+  '((type . "object")
+    (properties . ((command . ((type . "string")
+                               (description . "Shell command to execute")))
+                   (cwd . ((type . "string")
+                           (description . "Working directory for the command (optional)")))))
+    (required . ["command"]))
+  "Schema for shell command tools.")
+
+(defun harp--run-shell-command (input)
+  "Execute a shell command described by INPUT."
+  (let* ((command (alist-get 'command input))
+         (cwd (or (alist-get 'cwd input) default-directory))
+         (default-directory cwd))
+    (with-temp-buffer
+      (let ((exit-code (call-process-shell-command command nil t nil)))
+        (format "Exit code: %d\n%s" exit-code (buffer-string))))))
+
+(defun harp--register-shell-tool (name)
+  "Register a shell tool under NAME."
+  (harp-register-tool
+   name
+   "Execute a shell command and return its output."
+   harp--shell-tool-schema
+   #'harp--run-shell-command))
+
+(harp--register-shell-tool "run_shell")
 
 ;;; Tool: shell (alias for run_shell)
 
-(harp-register-tool
- "shell"
- "Execute a shell command and return its output."
- '((type . "object")
-   (properties . ((command . ((type . "string")
-                              (description . "Shell command to execute")))
-                  (cwd . ((type . "string")
-                          (description . "Working directory for the command (optional)")))))
-   (required . ["command"]))
- (lambda (input)
-   (let* ((command (alist-get 'command input))
-          (cwd (or (alist-get 'cwd input) default-directory))
-          (default-directory cwd))
-     (with-temp-buffer
-       (let ((exit-code (call-process-shell-command command nil t nil)))
-         (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
+(harp--register-shell-tool "shell")
 
 ;;; Tool: run_shell_command (alias for run_shell)
 
-(harp-register-tool
- "run_shell_command"
- "Execute a shell command and return its output."
- '((type . "object")
-   (properties . ((command . ((type . "string")
-                              (description . "Shell command to execute")))
-                  (cwd . ((type . "string")
-                          (description . "Working directory for the command (optional)")))))
-   (required . ["command"]))
- (lambda (input)
-   (let* ((command (alist-get 'command input))
-          (cwd (or (alist-get 'cwd input) default-directory))
-          (default-directory cwd))
-     (with-temp-buffer
-       (let ((exit-code (call-process-shell-command command nil t nil)))
-         (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
+(harp--register-shell-tool "run_shell_command")
 
 ;;; Tool: shell_command (alias for run_shell)
 
-(harp-register-tool
- "shell_command"
- "Execute a shell command and return its output."
- '((type . "object")
-   (properties . ((command . ((type . "string")
-                              (description . "Shell command to execute")))
-                  (cwd . ((type . "string")
-                          (description . "Working directory for the command (optional)")))))
-   (required . ["command"]))
- (lambda (input)
-   (let* ((command (alist-get 'command input))
-          (cwd (or (alist-get 'cwd input) default-directory))
-          (default-directory cwd))
-     (with-temp-buffer
-       (let ((exit-code (call-process-shell-command command nil t nil)))
-         (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
+(harp--register-shell-tool "shell_command")
 
 ;;; Tool: glob
 

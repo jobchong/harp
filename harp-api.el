@@ -373,9 +373,9 @@ When STREAMING is non-nil, also reset stream buffer state."
 
 (defun harp--response-payload ()
   "Build the standard on-done response payload."
-  `((content . ,harp--current-content)
-    (tool-calls . ,(harp--normalize-tool-calls
-                    (nreverse harp--tool-calls)))))
+  (let ((tool-calls (delq nil (nreverse harp--tool-calls))))
+    `((content . ,harp--current-content)
+      (tool-calls . ,(harp--normalize-tool-calls tool-calls)))))
 
 (defun harp--msg-get (key msg)
   "Return KEY from MSG, handling symbol or string keys."
@@ -481,6 +481,21 @@ When STREAMING is non-nil, also reset stream buffer state."
                 (string= (alist-get 'id tc) tool-id))
               harp--tool-calls))
 
+(defun harp--openai-tool-call-at (index)
+  "Return tool call at INDEX in the current OpenAI response."
+  (when (and (integerp index) (>= index 0))
+    (nth index harp--tool-calls)))
+
+(defun harp--openai-set-tool-call-at (index tool-call)
+  "Set TOOL-CALL at INDEX in `harp--tool-calls', extending as needed."
+  (when (and (integerp index) (>= index 0))
+    (let ((calls harp--tool-calls))
+      (while (< (length calls) (1+ index))
+        (setq calls (nconc calls (list nil))))
+      (setf (nth index calls) tool-call)
+      (setq harp--tool-calls calls)))
+  tool-call)
+
 (defun harp--openai-ensure-tool-call (tool-id name)
   "Ensure a tool call exists for TOOL-ID and NAME."
   (or (harp--openai-find-tool-call tool-id)
@@ -517,12 +532,14 @@ When STREAMING is non-nil, also reset stream buffer state."
                    (args (alist-get 'arguments fn)))
               (if id
                   ;; New tool call
-                  (push `((id . ,id) (name . ,name) (input . ,args))
-                        harp--tool-calls)
+                  (let ((tool-call `((id . ,id) (name . ,name) (input . ,args))))
+                    (if (integerp idx)
+                        (harp--openai-set-tool-call-at idx tool-call)
+                      (push tool-call harp--tool-calls)))
                 ;; Continuation of arguments
-                (when-let ((existing (nth idx harp--tool-calls)))
+                (when-let ((existing (harp--openai-tool-call-at idx)))
                   (setf (alist-get 'input existing)
-                        (concat (alist-get 'input existing) args))))))
+                        (concat (or (alist-get 'input existing) "") args))))))
           nil)))))))
 
 (defun harp--handle-openai-response-event (event)
