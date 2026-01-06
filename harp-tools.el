@@ -8,6 +8,7 @@
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
+(require 'harp-debug)
 
 ;;; Tool registry
 
@@ -19,6 +20,12 @@
 
 (defvar harp-internal-tools '("set_status")
   "List of tools used for UI/status updates that should not prompt for approval.")
+
+(defun harp--debug-trim (text limit)
+  "Trim TEXT to LIMIT characters with ellipsis if needed."
+  (if (and (stringp text) (> (length text) limit))
+      (concat (substring text 0 limit) "... [truncated]")
+    text))
 
 (defun harp--coerce-tool-input (input)
   "Coerce INPUT into a usable representation for tool handlers."
@@ -116,8 +123,20 @@
   "Execute tool NAME with INPUT, return result string."
   (if-let ((handler (alist-get name harp-tools-alist nil nil #'string=)))
       (condition-case err
-          (funcall handler input)
-        (error (format "Error executing %s: %s" name (error-message-string err))))
+          (let ((result (funcall handler input)))
+            (harp-debug-log 'info "tool %s input=%s" name
+                            (harp--debug-trim (prin1-to-string input) 800))
+            (harp-debug-log 'info "tool %s result=%s" name
+                            (harp--debug-trim (format "%s" result) 1200))
+            result)
+        (error
+         (when harp-debug-log-backtrace
+           (harp-debug-log 'verbose "tool %s backtrace:\n%s" name
+                           (with-temp-buffer
+                             (let ((standard-output (current-buffer)))
+                               (backtrace))
+                             (buffer-string))))
+         (format "Error executing %s: %s" name (error-message-string err))))
     (format "Unknown tool: %s" name)))
 
 (defun harp-get-tool-schemas ()
