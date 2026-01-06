@@ -60,7 +60,12 @@
 (defun harp--tool-path-from-alist (alist)
   "Return path value from ALIST if present."
   (or (alist-get 'path alist)
-      (alist-get "path" alist nil nil #'string=)))
+      (let ((value nil))
+        (dolist (pair alist value)
+          (when (and (consp pair)
+                     (stringp (car pair))
+                     (string= (car pair) "path"))
+            (setq value (cdr pair)))))))
 
 (defun harp--tool-path-from-plist (plist)
   "Return path value from PLIST if present."
