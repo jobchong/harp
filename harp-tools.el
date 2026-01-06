@@ -43,12 +43,12 @@
 
 (defun harp--normalize-tool-path (value)
   "Normalize VALUE into a usable path string."
-  (cond
-   ((stringp value) (expand-file-name value))
-   ((bufferp value)
-    (or (buffer-file-name value)
-        (error "Buffer has no file: %s" (buffer-name value))))
-   (t (error "Invalid path value: %S" value))))
+  (let ((path value))
+    (when (bufferp path)
+      (setq path (buffer-file-name path)))
+    (unless (stringp path)
+      (error "Invalid path value: %S" value))
+    (expand-file-name path)))
 
 (defun harp--tool-path-from-alist (alist)
   "Return path value from ALIST if present."
@@ -127,7 +127,7 @@ Used to display files in the file pane.")
 
 (harp-register-tool
  "read_file"
- "Read the contents of a file at the given path."
+ "Read the contents of a file at the given path (keep user paths verbatim, ~ is OK)."
  '((type . "object")
    (properties . ((path . ((type . "string")
                            (description . "Absolute path to the file to read")))))

@@ -117,7 +117,8 @@ You have access to tools for reading and writing files, running shell commands, 
 - Run tests after making changes when appropriate
 - Use set_status sparingly (at most once per response) to share a short next-steps summary before long work or tool use
 - Do not ask for permission to use tools; proceed when needed to answer the user
-- Keep responses concise but informative"
+- Keep responses concise but informative
+- When calling tools that accept paths, keep user-provided paths verbatim; do not substitute home directory usernames; ~ is acceptable"
   "Template for the system prompt. Format args:
 1. Platform
 2. Emacs version
