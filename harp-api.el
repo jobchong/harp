@@ -338,21 +338,26 @@
   (when harp--stream-orig-filter
     (funcall harp--stream-orig-filter proc chunk))
   (message "harp: received chunk (%d bytes)" (length chunk))
-  (let ((data chunk))
-    (unless harp--stream-headers-done
-      (let ((combined (concat harp--stream-header-buffer data)))
-        (if (string-match "\r?\n\r?\n" combined)
-            (progn
-              (setq harp--stream-headers-done t)
-              (setq harp--stream-header-buffer "")
-              (setq data (substring combined (match-end 0))))
-          (setq harp--stream-header-buffer combined)
-          (setq data ""))))
-    (when (and (stringp data) (not (string-empty-p data)))
-      (let ((events (harp--process-stream-chunk data harp--stream-provider)))
-        (harp--stream-handle-events events)
-        (dolist (event events)
-          (harp--stream-handle-event event))))))
+  (when (buffer-live-p (process-buffer proc))
+    (with-current-buffer (process-buffer proc)
+      (let ((provider harp--stream-provider)
+            (data chunk))
+        (if (not provider)
+            (message "harp: stream provider not initialized yet")
+          (unless harp--stream-headers-done
+            (let ((combined (concat harp--stream-header-buffer data)))
+              (if (string-match "\r?\n\r?\n" combined)
+                  (progn
+                    (setq harp--stream-headers-done t)
+                    (setq harp--stream-header-buffer "")
+                    (setq data (substring combined (match-end 0))))
+                (setq harp--stream-header-buffer combined)
+                (setq data ""))))
+          (when (and (stringp data) (not (string-empty-p data)))
+            (let ((events (harp--process-stream-chunk data provider)))
+              (harp--stream-handle-events events)
+              (dolist (event events)
+                (harp--stream-handle-event event)))))))))
 
 (defun harp--reset-response-state (&optional streaming)
   "Reset response state for a new request.
@@ -676,8 +681,6 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (url-request-data (encode-coding-string (json-encode body) 'utf-8))
          (response-buffer nil))
     (message "harp: calling %s with model %s" url harp-model)
-    ;; Reset state
-    (harp--reset-response-state t)
     (setq response-buffer
           (url-retrieve
            url
@@ -700,6 +703,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
                      (harp--stream-finalize-success))))))
            nil t t))
     (with-current-buffer response-buffer
+      (harp--reset-response-state t)
       (setq-local harp--stream-process-pos nil)
       (setq-local harp--stream-provider provider)
       (setq-local harp--stream-on-event on-event)
