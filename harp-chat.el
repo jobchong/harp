@@ -276,6 +276,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defvar-local harp-chat--status-text nil
   "Current status text for the assistant response.")
 
+(defvar-local harp-chat--status-updated nil
+  "Non-nil when status has been updated via set_status.")
+
 (defvar-local harp-chat--pending-tool-results nil
   "Alist of (tool-use-id . result) for pending tool results.")
 
@@ -319,6 +322,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--pending-tool-results nil)
   (setq-local harp-chat--current-tool-calls nil)
   (setq-local harp-chat--response-start (make-marker))
+  (setq-local harp-chat--status-updated nil)
   ;; Set up approval hook
   (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t))
 
@@ -351,7 +355,8 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (insert "\n")
       (set-marker harp-chat--status-start start)
       (set-marker harp-chat--status-end end)
-      (setq harp-chat--status-text "thinking...")))
+      (setq harp-chat--status-text "thinking...")
+      (setq harp-chat--status-updated nil)))
   (set-marker harp-chat--assistant-marker (point))
   (set-marker harp-chat--response-start (point)))
 
@@ -359,6 +364,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   "Update the status line for the current assistant response."
   (when (and harp-chat--status-start harp-chat--status-end)
     (setq harp-chat--status-text text)
+    (setq harp-chat--status-updated t)
     (save-excursion
       (goto-char harp-chat--status-start)
       (delete-region harp-chat--status-start harp-chat--status-end)
@@ -413,8 +419,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defun harp-chat--insert-tool-call (name input)
   "Insert a tool call display for NAME with INPUT."
   (if (string= name "set_status")
-      (when-let ((summary (harp-chat--status-from-input input)))
-        (harp-chat--set-status (string-trim summary)))
+      (and (not harp-chat--status-updated)
+           (when-let ((summary (harp-chat--status-from-input input)))
+             (harp-chat--set-status (string-trim summary))))
     (save-excursion
       (goto-char harp-chat--assistant-marker)
       (insert "\n" (propertize (format "[Tool: %s]" name) 'face 'harp-tool-face))
@@ -548,12 +555,13 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
        (with-current-buffer harp-chat-buffer-name
          (pcase (car event)
            ('text
-            (harp-chat--insert-streaming-text (cdr event)))
+              (harp-chat--insert-streaming-text (cdr event)))
            ('tool-call
             (let* ((tc (cdr event))
                    (name (alist-get 'name tc))
                    (input (alist-get 'input tc)))
-              (push tc harp-chat--current-tool-calls)
+              (unless (string= name "set_status")
+                (push tc harp-chat--current-tool-calls))
               (harp-chat--insert-tool-call name input))))))
      ;; On done
      (lambda (result)
@@ -565,7 +573,8 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                (harp-chat--finish-response))
            ;; Process tool calls if any
            (let ((content (alist-get 'content result))
-                 (tool-calls (alist-get 'tool-calls result)))
+                 (tool-calls (harp-chat--filter-tool-calls
+                              (alist-get 'tool-calls result))))
              ;; Add assistant message to history
              (push (harp-make-assistant-message
                     content harp-chat--current-tool-calls)
@@ -581,6 +590,13 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (harp-chat--set-status-if-default "running tools...")
   (setq harp-chat--pending-tool-results nil)
   (harp-chat--execute-next-tool tool-calls))
+
+(defun harp-chat--filter-tool-calls (tool-calls)
+  "Drop internal tool calls from TOOL-CALLS."
+  (seq-filter
+   (lambda (tc)
+     (not (string= (alist-get 'name tc) "set_status")))
+   tool-calls))
 
 (defun harp-chat--should-use-tools (input)
   "Return non-nil if INPUT should enable tools."
