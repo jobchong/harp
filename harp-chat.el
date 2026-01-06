@@ -560,8 +560,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
             (let* ((tc (cdr event))
                    (name (alist-get 'name tc))
                    (input (alist-get 'input tc)))
-              (unless (string= name "set_status")
-                (push tc harp-chat--current-tool-calls))
+              (push tc harp-chat--current-tool-calls)
               (harp-chat--insert-tool-call name input))))))
      ;; On done
      (lambda (result)
@@ -572,31 +571,37 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                 (format "\n[Error: %s]" err))
                (harp-chat--finish-response))
            ;; Process tool calls if any
-           (let ((content (alist-get 'content result))
-                 (tool-calls (harp-chat--filter-tool-calls
-                              (alist-get 'tool-calls result))))
+           (let* ((content (alist-get 'content result))
+                  (tool-calls (alist-get 'tool-calls result))
+                  (has-content (and (stringp content)
+                                    (not (string-empty-p content))))
+                  (has-external-tool
+                   (seq-some
+                    (lambda (tc)
+                      (not (harp-tool-internal-p (alist-get 'name tc))))
+                    tool-calls))
+                  (has-internal-tool
+                   (seq-some
+                    (lambda (tc)
+                      (harp-tool-internal-p (alist-get 'name tc)))
+                    tool-calls)))
              ;; Add assistant message to history
              (push (harp-make-assistant-message
                     content harp-chat--current-tool-calls)
                    harp-chat--messages)
-             (if tool-calls
-                 ;; Execute tools
-                 (harp-chat--execute-tools tool-calls)
-               ;; No tools, we're done
-               (harp-chat--finish-response)))))))))
+             (cond
+              (has-external-tool
+               (harp-chat--execute-tools tool-calls))
+              ((and has-internal-tool (not has-content))
+               (harp-chat--execute-tools tool-calls))
+              (t
+               (harp-chat--finish-response))))))))))
 
 (defun harp-chat--execute-tools (tool-calls)
   "Execute TOOL-CALLS sequentially with approval handling."
   (harp-chat--set-status-if-default "running tools...")
   (setq harp-chat--pending-tool-results nil)
   (harp-chat--execute-next-tool tool-calls))
-
-(defun harp-chat--filter-tool-calls (tool-calls)
-  "Drop internal tool calls from TOOL-CALLS."
-  (seq-filter
-   (lambda (tc)
-     (not (string= (alist-get 'name tc) "set_status")))
-   tool-calls))
 
 (defun harp-chat--should-use-tools (input)
   "Return non-nil if INPUT should enable tools."
