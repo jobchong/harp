@@ -19,6 +19,15 @@
 (defvar harp-internal-tools '("set_status")
   "List of tools used for UI/status updates that should not prompt for approval.")
 
+(defun harp--normalize-tool-path (value)
+  "Normalize VALUE into a usable path string."
+  (cond
+   ((stringp value) (expand-file-name value))
+   ((bufferp value)
+    (or (buffer-file-name value)
+        (error "Buffer has no file: %s" (buffer-name value))))
+   (t (error "Invalid path value: %S" value))))
+
 (defun harp-register-tool (name description input-schema handler)
   "Register a tool with NAME, DESCRIPTION, INPUT-SCHEMA, and HANDLER function."
   (setf (alist-get name harp-tools-alist nil nil #'string=) handler)
@@ -73,7 +82,7 @@ Used to display files in the file pane.")
                            (description . "Absolute path to the file to read")))))
    (required . ["path"]))
  (lambda (input)
-   (let ((path (alist-get 'path input)))
+   (let ((path (harp--normalize-tool-path (alist-get 'path input))))
      (harp--notify-file-access path)
      (if (file-exists-p path)
          (with-temp-buffer
@@ -105,7 +114,7 @@ Used to display files in the file pane.")
                               (description . "Content to write to the file")))))
    (required . ["path" "content"]))
  (lambda (input)
-   (let ((path (alist-get 'path input))
+   (let ((path (harp--normalize-tool-path (alist-get 'path input)))
          (content (alist-get 'content input)))
      (make-directory (file-name-directory path) t)
      (with-temp-file path
@@ -131,7 +140,7 @@ Used to display files in the file pane.")
                                  (description . "String to replace old_string with")))))
    (required . ["path" "old_string" "new_string"]))
  (lambda (input)
-   (let ((path (alist-get 'path input))
+   (let ((path (harp--normalize-tool-path (alist-get 'path input)))
          (old-string (alist-get 'old_string input))
          (new-string (alist-get 'new_string input)))
      (harp--notify-file-access path)
@@ -174,6 +183,25 @@ Used to display files in the file pane.")
        (let ((exit-code (call-process-shell-command command nil t nil)))
          (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
 
+;;; Tool: shell (alias for run_shell)
+
+(harp-register-tool
+ "shell"
+ "Execute a shell command and return its output."
+ '((type . "object")
+   (properties . ((command . ((type . "string")
+                              (description . "Shell command to execute")))
+                  (cwd . ((type . "string")
+                          (description . "Working directory for the command (optional)")))))
+   (required . ["command"]))
+ (lambda (input)
+   (let* ((command (alist-get 'command input))
+          (cwd (or (alist-get 'cwd input) default-directory))
+          (default-directory cwd))
+     (with-temp-buffer
+       (let ((exit-code (call-process-shell-command command nil t nil)))
+         (format "Exit code: %d\n%s" exit-code (buffer-string)))))))
+
 ;;; Tool: glob
 
 (harp-register-tool
@@ -188,6 +216,7 @@ Used to display files in the file pane.")
  (lambda (input)
    (let* ((pattern (alist-get 'pattern input))
           (path (or (alist-get 'path input) default-directory))
+          (path (if (bufferp path) (harp--normalize-tool-path path) path))
           (default-directory path)
           (files (file-expand-wildcards pattern t)))
      (if files
@@ -210,6 +239,7 @@ Used to display files in the file pane.")
  (lambda (input)
    (let* ((pattern (alist-get 'pattern input))
           (path (or (alist-get 'path input) default-directory))
+          (path (if (bufferp path) (harp--normalize-tool-path path) path))
           (glob (alist-get 'glob input))
           (cmd (concat "grep -rn "
                        (when glob (format "--include='%s' " glob))
@@ -232,7 +262,7 @@ Used to display files in the file pane.")
                            (description . "Directory path to list")))))
    (required . ["path"]))
  (lambda (input)
-   (let ((path (alist-get 'path input)))
+   (let ((path (harp--normalize-tool-path (alist-get 'path input))))
      (if (not (file-directory-p path))
          (format "Not a directory: %s" path)
        (mapconcat
@@ -244,7 +274,7 @@ Used to display files in the file pane.")
 
 ;;; Dangerous tools list
 
-(defvar harp-dangerous-tools '("write_file" "edit_file" "run_shell")
+(defvar harp-dangerous-tools '("write_file" "edit_file" "run_shell" "shell")
   "List of tool names that require approval.")
 
 (defun harp-tool-dangerous-p (name)
