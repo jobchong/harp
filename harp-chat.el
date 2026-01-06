@@ -10,6 +10,7 @@
 (require 'harp-tools)
 (require 'harp-approval)
 (require 'harp-context)
+(require 'harp-debug)
 (require 'seq)
 (require 'project)
 
@@ -481,6 +482,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (when (and harp-chat--response-start harp-chat--assistant-marker)
     (harp-chat--highlight-markdown harp-chat--response-start
                                    harp-chat--assistant-marker))
+  (harp-debug-maybe-dump-state "response")
   (goto-char harp-chat--assistant-marker)
   (insert "\n")
   (harp-chat--insert-prompt)
