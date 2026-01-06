@@ -108,7 +108,7 @@ Left pane is the chat interface, right pane shows files."
   "Quit harp and restore previous window configuration."
   (interactive)
   ;; Cancel any pending request
-  (harp-cancel-request)
+  (harp--cleanup-connections)
   ;; Remove hooks
   (remove-hook 'harp-file-display-hook #'harp--show-file)
   ;; Kill chat buffer

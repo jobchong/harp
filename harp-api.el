@@ -603,6 +603,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
                   (user-error "Set `harp-api-key-anthropic' first")))
     ('openai (unless harp-api-key-openai
                (user-error "Set `harp-api-key-openai' first"))))
+  (harp-cancel-request)
   (let* ((provider (harp-get-provider))
          (url (harp-provider-endpoint provider))
          (headers (funcall (harp-provider-headers-fn provider)))
@@ -646,6 +647,7 @@ ON-EVENT called incrementally, ON-DONE when complete."
     (when-let ((proc (get-buffer-process response-buffer)))
       (set-process-query-on-exit-flag proc nil)
       (setq-local harp--stream-orig-filter (process-filter proc))
+      (setq harp--active-process proc)
       (set-process-filter proc #'harp--stream-process-filter))))
 (defun harp-cancel-request ()
   "Cancel any active API request."
