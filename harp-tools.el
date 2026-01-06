@@ -142,7 +142,12 @@ Used to display files in the file pane.")
 
 (defun harp--notify-file-access (filepath)
   "Notify that FILEPATH was accessed."
-  (run-hook-with-args 'harp-file-display-hook filepath))
+  (let ((path (cond
+               ((stringp filepath) filepath)
+               ((bufferp filepath) (buffer-file-name filepath))
+               (t nil))))
+    (when path
+      (run-hook-with-args 'harp-file-display-hook path))))
 
 ;;; Tool: read_file
 
