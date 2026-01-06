@@ -273,6 +273,12 @@
 (defvar-local harp--stream-orig-filter nil
   "Original process filter for the current streaming response.")
 
+(defvar-local harp--stream-headers-done nil
+  "Non-nil once response headers have been fully received.")
+
+(defvar-local harp--stream-header-buffer ""
+  "Buffer for partial response headers before streaming begins.")
+
 (defun harp--stream-call-on-done (payload)
   "Call on-done with PAYLOAD if configured."
   (when harp--stream-on-done
@@ -310,28 +316,43 @@
   "Parse any new SSE events from the response buffer."
   (let* ((new-content (buffer-substring harp--stream-process-pos (point-max)))
          (events (harp--process-stream-chunk new-content harp--stream-provider)))
-    (when events
-      (message "harp: parsed %d events" (length events)))
+    (harp--stream-handle-events events)
     (setq harp--stream-process-pos (point-max))
     (dolist (event events)
-      (when (eq (car event) 'text)
-        (message "harp: text event (%d chars)" (length (cdr event))))
-      (when (eq (car event) 'tool-call)
-        (let ((tc (cdr event)))
-          (message "harp: tool call %s"
-                   (or (alist-get 'name tc) "<unknown>"))))
       (harp--stream-handle-event event))))
+
+(defun harp--stream-handle-events (events)
+  "Log and handle a list of EVENTS."
+  (when events
+    (message "harp: parsed %d events" (length events)))
+  (dolist (event events)
+    (when (eq (car event) 'text)
+      (message "harp: text event (%d chars)" (length (cdr event))))
+    (when (eq (car event) 'tool-call)
+      (let ((tc (cdr event)))
+        (message "harp: tool call %s"
+                 (or (alist-get 'name tc) "<unknown>"))))))
 
 (defun harp--stream-process-filter (proc chunk)
   "Process filter for streaming responses."
   (when harp--stream-orig-filter
     (funcall harp--stream-orig-filter proc chunk))
   (message "harp: received chunk (%d bytes)" (length chunk))
-  (when (buffer-live-p (process-buffer proc))
-    (with-current-buffer (process-buffer proc)
-      (harp--stream-ensure-process-pos)
-      (when harp--stream-process-pos
-        (harp--stream-parse-events)))))
+  (let ((data chunk))
+    (unless harp--stream-headers-done
+      (let ((combined (concat harp--stream-header-buffer data)))
+        (if (string-match "\r?\n\r?\n" combined)
+            (progn
+              (setq harp--stream-headers-done t)
+              (setq harp--stream-header-buffer "")
+              (setq data (substring combined (match-end 0))))
+          (setq harp--stream-header-buffer combined)
+          (setq data ""))))
+    (when (and (stringp data) (not (string-empty-p data)))
+      (let ((events (harp--process-stream-chunk data harp--stream-provider)))
+        (harp--stream-handle-events events)
+        (dolist (event events)
+          (harp--stream-handle-event event))))))
 
 (defun harp--reset-response-state (&optional streaming)
   "Reset response state for a new request.
@@ -341,7 +362,9 @@ When STREAMING is non-nil, also reset stream buffer state."
   (setq harp--current-tool-call nil)
   (setq harp--openai-text-seen nil)
   (when streaming
-    (setq harp--stream-buffer "")))
+    (setq harp--stream-buffer "")
+    (setq harp--stream-headers-done nil)
+    (setq harp--stream-header-buffer "")))
 
 (defun harp--response-payload ()
   "Build the standard on-done response payload."
