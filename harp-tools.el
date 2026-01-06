@@ -50,13 +50,28 @@
         (error "Buffer has no file: %s" (buffer-name value))))
    (t (error "Invalid path value: %S" value))))
 
+(defun harp--tool-path-from-alist (alist)
+  "Return path value from ALIST if present."
+  (or (alist-get 'path alist)
+      (when (stringp (car (car-safe alist)))
+        (cdr (assoc-string "path" alist t)))))
+
+(defun harp--tool-path-from-plist (plist)
+  "Return path value from PLIST if present."
+  (or (plist-get plist :path)
+      (plist-get plist 'path)
+      (plist-get plist "path")))
+
 (defun harp--tool-input-path (input)
   "Extract a path from INPUT and normalize it."
   (let* ((normalized (harp--coerce-tool-input input))
-         (value (if (listp normalized)
-                    (or (alist-get 'path normalized)
-                        (alist-get "path" normalized nil nil #'string=))
-                  normalized)))
+         (value (cond
+                 ((or (stringp normalized) (bufferp normalized)) normalized)
+                 ((and (listp normalized) (consp (car normalized)))
+                  (harp--tool-path-from-alist normalized))
+                 ((listp normalized)
+                  (harp--tool-path-from-plist normalized))
+                 (t normalized))))
     (harp--normalize-tool-path value)))
 
 (defun harp-register-tool (name description input-schema handler)
