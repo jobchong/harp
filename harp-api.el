@@ -681,15 +681,16 @@ When STREAMING is non-nil, also reset stream buffer state."
   "Call LLM API with streaming, processing events as they arrive.
 MESSAGES, SYSTEM, TOOLS are used to build the request.
 ON-EVENT called incrementally, ON-DONE when complete."
-  ;; Validate API key for current provider
-  (pcase harp-default-provider
-    ('anthropic (unless harp-api-key-anthropic
-                  (user-error "Set `harp-api-key-anthropic' first")))
-    ('openai (unless harp-api-key-openai
-               (user-error "Set `harp-api-key-openai' first"))))
-  (harp-cancel-request)
   (let* ((provider (harp-get-provider))
-         (url (harp-provider-endpoint provider))
+         (provider-name (harp-provider-name provider)))
+    ;; Validate API key for current provider
+    (pcase provider-name
+      ("anthropic" (unless harp-api-key-anthropic
+                     (user-error "Set `harp-api-key-anthropic' first")))
+      ("openai" (unless harp-api-key-openai
+                  (user-error "Set `harp-api-key-openai' first"))))
+    (harp-cancel-request)
+    (let* ((url (harp-provider-endpoint provider))
          (headers (funcall (harp-provider-headers-fn provider)))
          (body (funcall (harp-provider-request-fn provider)
                         messages system tools))
@@ -697,41 +698,41 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (url-request-extra-headers headers)
          (url-request-data (encode-coding-string (json-encode body) 'utf-8))
          (response-buffer nil))
-    (message "harp: calling %s with model %s" url harp-model)
-    (setq response-buffer
-          (url-retrieve
-           url
-           (lambda (status)
-             (message "harp: url-retrieve callback, status=%S" status)
-             (message "harp: response buffer contents (first 500 chars): %s"
-                      (buffer-substring (point-min) (min (point-max) 500)))
-             ;; Fallback: call on-done if not already called via stream
-             (unless harp--stream-done-called
-               (setq harp--stream-done-called t)
-               (if-let ((err (plist-get status :error)))
-                   (harp--stream-finalize-error (format "%s" err))
-                 (let* ((body-start (when (re-search-forward "\n\n" nil t)
-                                      (point)))
-                        (body (when body-start
-                                (buffer-substring body-start (point-max))))
-                        (api-err (and body (harp--extract-error-message body))))
-                   (if api-err
-                       (harp--stream-finalize-error api-err)
-                     (harp--stream-finalize-success))))))
-           nil t t))
-    (with-current-buffer response-buffer
-      (harp--reset-response-state t)
-      (setq-local harp--stream-process-pos nil)
-      (setq-local harp--stream-provider provider)
-      (setq-local harp--stream-on-event on-event)
-      (setq-local harp--stream-on-done on-done)
-      (setq-local harp--stream-done-called nil))
-    ;; Set up process filter for incremental parsing
-    (when-let ((proc (get-buffer-process response-buffer)))
-      (set-process-query-on-exit-flag proc nil)
-      (setq-local harp--stream-orig-filter (process-filter proc))
-      (setq harp--active-process proc)
-      (set-process-filter proc #'harp--stream-process-filter))))
+      (message "harp: calling %s with model %s" url harp-model)
+      (setq response-buffer
+            (url-retrieve
+             url
+             (lambda (status)
+               (message "harp: url-retrieve callback, status=%S" status)
+               (message "harp: response buffer contents (first 500 chars): %s"
+                        (buffer-substring (point-min) (min (point-max) 500)))
+               ;; Fallback: call on-done if not already called via stream
+               (unless harp--stream-done-called
+                 (setq harp--stream-done-called t)
+                 (if-let ((err (plist-get status :error)))
+                     (harp--stream-finalize-error (format "%s" err))
+                   (let* ((body-start (when (re-search-forward "\n\n" nil t)
+                                        (point)))
+                          (body (when body-start
+                                  (buffer-substring body-start (point-max))))
+                          (api-err (and body (harp--extract-error-message body))))
+                     (if api-err
+                         (harp--stream-finalize-error api-err)
+                       (harp--stream-finalize-success))))))
+             nil t t))
+      (with-current-buffer response-buffer
+        (harp--reset-response-state t)
+        (setq-local harp--stream-process-pos nil)
+        (setq-local harp--stream-provider provider)
+        (setq-local harp--stream-on-event on-event)
+        (setq-local harp--stream-on-done on-done)
+        (setq-local harp--stream-done-called nil))
+      ;; Set up process filter for incremental parsing
+      (when-let ((proc (get-buffer-process response-buffer)))
+        (set-process-query-on-exit-flag proc nil)
+        (setq-local harp--stream-orig-filter (process-filter proc))
+        (setq harp--active-process proc)
+        (set-process-filter proc #'harp--stream-process-filter)))))
 (defun harp-cancel-request ()
   "Cancel any active API request."
   (when (and harp--active-process

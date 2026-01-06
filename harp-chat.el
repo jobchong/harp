@@ -573,6 +573,8 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
            ;; Process tool calls if any
            (let* ((content (alist-get 'content result))
                   (tool-calls (alist-get 'tool-calls result))
+                  (assistant-tool-calls (or harp-chat--current-tool-calls
+                                            tool-calls))
                   (has-content (and (stringp content)
                                     (not (string-empty-p content))))
                   (has-external-tool
@@ -586,8 +588,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                       (harp-tool-internal-p (alist-get 'name tc)))
                     tool-calls)))
              ;; Add assistant message to history
-             (push (harp-make-assistant-message
-                    content harp-chat--current-tool-calls)
+             (push (harp-make-assistant-message content assistant-tool-calls)
                    harp-chat--messages)
              (cond
               (has-external-tool
