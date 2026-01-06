@@ -54,9 +54,26 @@ Manual setup:
 
 In the chat buffer:
 
-- `RET` or `C-c C-c` send message / approve tool
-- `y` / `n` approve or reject tool prompts
-- `C-c C-k` cancel the current request
+| Key | Action |
+|-----|--------|
+| `RET` / `C-c C-c` | Send message or approve tool |
+| `y` / `n` | Approve or reject tool prompts |
+| `C-c C-k` | Cancel the current request |
+| `M-n` | Jump to next file link |
+| `M-p` | Jump to previous file link |
+| `C-c C-o` | Open file link at point |
+| `C-c C-l` | List all file links in buffer |
+
+## Syntax Highlighting
+
+Responses are automatically highlighted:
+
+- **Fenced code blocks** (` ``` `) get language-specific syntax highlighting when the major mode is available
+- **Inline code** (`` `code` ``) is rendered in a distinct face
+- **File paths** like `/path/to/file.el:42` become clickable links
+  - Click or press `RET` to open in the file pane
+  - Paths from `write_file`/`edit_file` results are shown in orange to indicate modifications
+  - Line numbers are supported—opening jumps to the specified line
 
 ## Built-in Tools
 

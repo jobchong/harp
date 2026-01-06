@@ -76,6 +76,9 @@
 
 ;;; File link support
 
+;; Forward declaration for byte-compiler
+(defvar harp-chat--file-buffer)
+
 (defvar harp-file-link-keymap
   (let ((map (make-sparse-keymap)))
     (define-key map [mouse-1] #'harp-file-link-open)
@@ -92,7 +95,8 @@
                   (posn-point (event-end event))
                 (point)))
          (file (get-text-property pos 'harp-file))
-         (line (get-text-property pos 'harp-line)))
+         (line (get-text-property pos 'harp-line))
+         (chat-buffer (current-buffer)))
     (when file
       (let ((file-window (and (boundp 'harp-chat--file-buffer)
                               harp-chat--file-buffer
@@ -102,7 +106,9 @@
             (progn
               (select-window file-window)
               (find-file file)
-              (setq harp-chat--file-buffer (current-buffer))
+              (let ((new-buffer (current-buffer)))
+                (with-current-buffer chat-buffer
+                  (setq harp-chat--file-buffer new-buffer)))
               (when line
                 (goto-char (point-min))
                 (forward-line (1- line))))
