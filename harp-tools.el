@@ -90,13 +90,33 @@ Used to display files in the file pane.")
                            (description . "Absolute path to the file to read")))))
    (required . ["path"]))
  (lambda (input)
-   (let ((path (harp--tool-input-path input)))
-     (harp--notify-file-access path)
-     (if (file-exists-p path)
-         (with-temp-buffer
-           (insert-file-contents path)
-           (buffer-string))
-       (format "File not found: %s" path)))))
+   (let* ((buffer-input (cond
+                         ((bufferp input) input)
+                         ((and (listp input) (bufferp (alist-get 'path input)))
+                          (alist-get 'path input))
+                         ((and (listp input)
+                               (bufferp (alist-get "path" input nil nil #'string=)))
+                          (alist-get "path" input nil nil #'string=))
+                         (t nil)))
+          (path (unless buffer-input
+                  (condition-case nil
+                      (harp--tool-input-path input)
+                    (error nil)))))
+     (cond
+      (buffer-input
+       (harp--notify-file-access
+        (or (buffer-file-name buffer-input) (buffer-name buffer-input)))
+       (with-current-buffer buffer-input
+         (buffer-string)))
+      ((not path)
+       "read_file requires a valid path")
+      (t
+       (harp--notify-file-access path)
+       (if (file-exists-p path)
+           (with-temp-buffer
+             (insert-file-contents path)
+             (buffer-string))
+         (format "File not found: %s" path)))))))
 
 ;;; Tool: set_status
 
