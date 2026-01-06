@@ -74,6 +74,27 @@
                  (t normalized))))
     value))
 
+(defun harp--resolve-read-path (input)
+  "Resolve INPUT to an existing file path if possible."
+  (let* ((target (harp--tool-path-target input))
+         (path (cond
+                ((bufferp target) (buffer-file-name target))
+                ((stringp target) (expand-file-name target))
+                (t nil))))
+    (unless (stringp path)
+      (error "read_file requires a file path"))
+    (if (file-exists-p path)
+        path
+      (let* ((dir (file-name-directory path))
+             (base (file-name-nondirectory path)))
+        (when (and dir base (file-directory-p dir))
+          (let ((match (cl-find-if
+                        (lambda (f)
+                          (string-equal (downcase f) (downcase base)))
+                        (directory-files dir nil nil t))))
+            (when match
+              (expand-file-name match dir))))))))
+
 (defun harp--tool-input-path (input)
   "Extract a path from INPUT and normalize it."
   (let ((value (harp--tool-path-target input)))
@@ -127,26 +148,20 @@ Used to display files in the file pane.")
 
 (harp-register-tool
  "read_file"
- "Read the contents of a file at the given path (keep user paths verbatim, ~ is OK)."
+ "Read the contents of a file at the given path (relative and ~ are OK)."
  '((type . "object")
    (properties . ((path . ((type . "string")
                            (description . "Absolute path to the file to read")))))
    (required . ["path"]))
  (lambda (input)
    (condition-case err
-       (let* ((target (harp--tool-path-target input))
-              (path (cond
-                     ((bufferp target) (buffer-file-name target))
-                     ((stringp target) (harp--normalize-tool-path target))
-                     (t nil))))
-         (unless path
-           (error "read_file requires a file path"))
-         (harp--notify-file-access path)
-         (if (file-exists-p path)
+       (let* ((resolved (harp--resolve-read-path input)))
+         (harp--notify-file-access resolved)
+         (if (file-exists-p resolved)
              (with-temp-buffer
-               (insert-file-contents path)
+               (insert-file-contents resolved)
                (buffer-string))
-           (format "File not found: %s" path)))
+           (format "File not found: %s" resolved)))
      (error (format "read_file requires a valid path: %s"
                     (error-message-string err))))))
 
