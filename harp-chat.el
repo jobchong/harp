@@ -281,7 +281,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   "Non-nil when status has been updated via set_status.")
 
 (defvar-local harp-chat--pending-tool-results nil
-  "Alist of (tool-use-id . result) for pending tool results.")
+  "List of (tool-use-id result is-error) entries for pending tool results.")
 
 (defvar-local harp-chat--current-tool-calls nil
   "Tool calls from the current response, for building assistant message.")
@@ -631,15 +631,23 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
        name input
        (lambda (result)
          (with-current-buffer harp-chat-buffer-name
-           (harp-chat--insert-tool-result name result)
-           (push (cons id result) harp-chat--pending-tool-results)
+           (let* ((payload (if (and (listp result) (plist-member result :result))
+                               result
+                             (list :result (format "%s" result) :error nil)))
+                  (result-str (plist-get payload :result))
+                  (is-error (plist-get payload :error)))
+             (harp-chat--insert-tool-result name result-str)
+             (push (list id result-str is-error)
+                   harp-chat--pending-tool-results))
            (harp-chat--execute-next-tool (cdr remaining-tools))))))))
 
 (defun harp-chat--tools-complete ()
   "Called when all tools have been executed. Add results and continue loop."
   ;; Add tool results to messages
   (dolist (result harp-chat--pending-tool-results)
-    (push (harp-make-tool-result (car result) (cdr result))
+    (push (harp-make-tool-result (nth 0 result)
+                                 (nth 1 result)
+                                 (nth 2 result))
           harp-chat--messages))
   ;; Reset for next round
   (setq harp-chat--current-tool-calls nil)

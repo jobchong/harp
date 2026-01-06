@@ -99,15 +99,19 @@ Called with no arguments. Use `harp-approval-get-pending' to get details.")
 
 (defun harp-approval-execute-with-approval (tool-name input on-result)
   "Execute TOOL-NAME with INPUT, handling approval if needed.
-ON-RESULT is called with the result string when complete."
+ON-RESULT is called with a plist (:result STRING :error BOOL)."
   (if (harp-approval-needed-p tool-name)
       (harp-approval-request
        tool-name input
        (lambda (approved)
          (if approved
-             (funcall on-result (harp-execute-tool tool-name input))
-           (funcall on-result (format "[Tool %s rejected by user]" tool-name)))))
-    (funcall on-result (harp-execute-tool tool-name input))))
+             (funcall on-result (list :result (harp-execute-tool tool-name input)
+                                      :error nil))
+           (funcall on-result
+                    (list :result (format "[Tool %s rejected by user]" tool-name)
+                          :error t)))))
+    (funcall on-result (list :result (harp-execute-tool tool-name input)
+                             :error nil))))
 
 (provide 'harp-approval)
 ;;; harp-approval.el ends here
