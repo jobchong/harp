@@ -63,7 +63,7 @@
       (plist-get plist "path")))
 
 (defun harp--tool-path-target (input)
-  "Return either a path string or a buffer from INPUT."
+  "Return a path string or buffer from INPUT for later normalization."
   (let* ((normalized (harp--coerce-tool-input input))
          (value (cond
                  ((or (stringp normalized) (bufferp normalized)) normalized)
@@ -134,23 +134,19 @@ Used to display files in the file pane.")
    (required . ["path"]))
  (lambda (input)
    (condition-case err
-       (let* ((target (harp--tool-path-target input)))
-         (cond
-          ((bufferp target)
-           (harp--notify-file-access
-            (or (buffer-file-name target) (buffer-name target)))
-           (with-current-buffer target
-             (buffer-string)))
-          ((stringp target)
-           (let ((path (harp--normalize-tool-path target)))
-             (harp--notify-file-access path)
-             (if (file-exists-p path)
-                 (with-temp-buffer
-                   (insert-file-contents path)
-                   (buffer-string))
-               (format "File not found: %s" path))))
-          (t
-           "read_file requires a valid path")))
+       (let* ((target (harp--tool-path-target input))
+              (path (cond
+                     ((bufferp target) (buffer-file-name target))
+                     ((stringp target) (harp--normalize-tool-path target))
+                     (t nil))))
+         (unless path
+           (error "read_file requires a file path"))
+         (harp--notify-file-access path)
+         (if (file-exists-p path)
+             (with-temp-buffer
+               (insert-file-contents path)
+               (buffer-string))
+           (format "File not found: %s" path)))
      (error (format "read_file requires a valid path: %s"
                     (error-message-string err))))))
 
