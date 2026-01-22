@@ -247,8 +247,12 @@ Used to display files in the file pane.")
          (old-string (alist-get 'old_string input))
          (new-string (alist-get 'new_string input)))
      (harp--notify-file-access path)
-     (if (not (file-exists-p path))
-         (format "File not found: %s" path)
+     (cond
+      ((or (not (stringp old-string)) (string-empty-p old-string))
+       "old_string must be a non-empty string")
+      ((not (file-exists-p path))
+       (format "File not found: %s" path))
+      (t
        (let ((content (with-temp-buffer
                         (insert-file-contents path)
                         (buffer-string))))
@@ -265,7 +269,7 @@ Used to display files in the file pane.")
                (with-current-buffer buf
                  (revert-buffer t t t)))
              (format "Edited %s: replaced %d chars with %d chars"
-                     path (length old-string) (length new-string)))))))))
+                     path (length old-string) (length new-string))))))))))
 
 ;;; Tool: run_shell
 

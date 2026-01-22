@@ -12,6 +12,7 @@
 (require 'json)
 (require 'url)
 (require 'cl-lib)
+(require 'harp-debug)
 
 ;;; Customization
 
@@ -47,8 +48,6 @@
 (defcustom harp-model-provider-alist
   '(("claude-opus-4-5-20251101" . anthropic)
     ("claude-sonnet-4-20250514" . anthropic)
-    ("claude-3-5-sonnet-20241022" . anthropic)
-    ("claude-3-5-haiku-20241022" . anthropic)
     ("gpt-5.1-codex-max" . openai))
   "Map model names to providers for automatic routing."
   :type '(alist :key-type string :value-type symbol)
@@ -328,26 +327,26 @@
 (defun harp--stream-handle-events (events)
   "Log and handle a list of EVENTS."
   (when events
-    (message "harp: parsed %d events" (length events)))
+    (harp-debug-log 'verbose "harp: parsed %d events" (length events)))
   (dolist (event events)
     (when (eq (car event) 'text)
-      (message "harp: text event (%d chars)" (length (cdr event))))
+      (harp-debug-log 'verbose "harp: text event (%d chars)" (length (cdr event))))
     (when (eq (car event) 'tool-call)
       (let ((tc (cdr event)))
-        (message "harp: tool call %s"
-                 (or (alist-get 'name tc) "<unknown>"))))))
+        (harp-debug-log 'verbose "harp: tool call %s"
+                        (or (alist-get 'name tc) "<unknown>"))))))
 
 (defun harp--stream-process-filter (proc chunk)
   "Process filter for PROC handling streaming response CHUNK."
   (when harp--stream-orig-filter
     (funcall harp--stream-orig-filter proc chunk))
-  (message "harp: received chunk (%d bytes)" (length chunk))
+  (harp-debug-log 'verbose "harp: received chunk (%d bytes)" (length chunk))
   (when (buffer-live-p (process-buffer proc))
     (with-current-buffer (process-buffer proc)
       (let ((provider harp--stream-provider)
             (data chunk))
         (if (not provider)
-            (message "harp: stream provider not initialized yet")
+            (harp-debug-log 'verbose "harp: stream provider not initialized yet")
           (unless harp--stream-headers-done
             (let ((combined (concat harp--stream-header-buffer data)))
               (if (string-match "\r?\n\r?\n" combined)
@@ -663,12 +662,12 @@ When STREAMING is non-nil, also reset stream buffer state."
     (setq lines (butlast lines))
     (dolist (line lines)
       (when harp-debug-sse
-        (message "harp: sse line: %s" line))
+        (harp-debug-log 'verbose "harp: sse line: %s" line))
       (when-let ((event (harp--parse-sse-line line provider)))
         (when harp-debug-sse
           (let ((etype (alist-get 'type event)))
             (when etype
-              (message "harp: sse event type=%s" etype))))
+              (harp-debug-log 'verbose "harp: sse event type=%s" etype))))
         (let ((result (pcase (harp-provider-name provider)
                         ("anthropic" (harp--handle-anthropic-event event))
                         ("openai" (harp--handle-openai-event event)))))
@@ -702,14 +701,15 @@ ON-EVENT called incrementally, ON-DONE when complete."
          (url-request-extra-headers headers)
          (url-request-data (encode-coding-string (json-encode body) 'utf-8))
          (response-buffer nil))
-      (message "harp: calling %s with model %s" url harp-model)
+      (harp-debug-log 'info "harp: calling %s with model %s" url harp-model)
       (setq response-buffer
             (url-retrieve
              url
              (lambda (status)
-               (message "harp: url-retrieve callback, status=%S" status)
-               (message "harp: response buffer contents (first 500 chars): %s"
-                        (buffer-substring (point-min) (min (point-max) 500)))
+               (harp-debug-log 'info "harp: url-retrieve callback, status=%S" status)
+               (harp-debug-log 'verbose
+                               "harp: response buffer contents (first 500 chars): %s"
+                               (buffer-substring (point-min) (min (point-max) 500)))
                ;; Fallback: call on-done if not already called via stream
                (unless harp--stream-done-called
                  (setq harp--stream-done-called t)

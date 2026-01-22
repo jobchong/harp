@@ -204,8 +204,11 @@
             (forward-line (1- line))))))))
 
 (defconst harp-file-path-regexp
-  (rx (group (or "/" "~/" "./")
-             (+ (any alnum "_/.-")))
+  (rx (group (or (seq (or "/" "~/" "./" "../")
+                      (+ (any alnum "_/.-")))
+                 (seq (+ (any alnum "_-"))
+                      (or "/" ".")
+                      (+ (any alnum "_/.-")))))
       (optional ":" (group (+ digit))
                 (optional ":" (group (+ digit)))))
   "Regexp matching file paths with optional :line:col suffix.")

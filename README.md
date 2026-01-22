@@ -46,6 +46,8 @@ Manual setup:
 ;; (setq harp-project-approval-alist '(("/abs/project/root" . full)))
 ```
 
+See `CONFIG.md` for a complete list of customization options.
+
 ## Use
 
 - `M-x harp-start` to open the two-pane interface
