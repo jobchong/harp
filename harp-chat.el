@@ -31,58 +31,128 @@
   :group 'harp-chat)
 
 (defface harp-user-face
-  '((t :inherit font-lock-keyword-face :weight bold))
+  '((((class color) (background light))
+     :foreground "#0066cc" :weight bold)
+    (((class color) (background dark))
+     :foreground "#6eb5ff" :weight bold)
+    (t :weight bold))
   "Face for user messages."
   :group 'harp-chat)
 
 (defface harp-assistant-face
-  '((t :inherit font-lock-function-name-face))
+  '((((class color) (background light))
+     :foreground "#7c3aed" :weight bold)
+    (((class color) (background dark))
+     :foreground "#a78bfa" :weight bold)
+    (t :weight bold))
   "Face for assistant messages."
   :group 'harp-chat)
 
 (defface harp-tool-face
-  '((t :inherit font-lock-type-face :slant italic))
+  '((((class color) (background light))
+     :foreground "#047857" :slant italic)
+    (((class color) (background dark))
+     :foreground "#34d399" :slant italic)
+    (t :slant italic))
   "Face for tool calls and results."
   :group 'harp-chat)
 
 (defface harp-status-face
-  '((t :inherit shadow))
+  '((((class color) (background light))
+     :foreground "#6b7280")
+    (((class color) (background dark))
+     :foreground "#9ca3af"))
   "Face for assistant status lines."
   :group 'harp-chat)
 
 (defface harp-prompt-face
-  '((t :inherit minibuffer-prompt :weight bold))
+  '((((class color) (background light))
+     :foreground "#0066cc" :weight bold)
+    (((class color) (background dark))
+     :foreground "#6eb5ff" :weight bold)
+    (t :weight bold))
   "Face for the input prompt."
   :group 'harp-chat)
 
 (defface harp-separator-face
-  '((t :inherit shadow))
+  '((((class color) (background light))
+     :foreground "#d1d5db")
+    (((class color) (background dark))
+     :foreground "#4b5563"))
   "Face for separators."
   :group 'harp-chat)
 
 (defface harp-approval-face
-  '((t :inherit warning :weight bold))
+  '((((class color) (background light))
+     :foreground "#d97706" :weight bold)
+    (((class color) (background dark))
+     :foreground "#fbbf24" :weight bold)
+    (t :inherit warning :weight bold))
   "Face for approval prompts."
   :group 'harp-chat)
 
 (defface harp-code-face
-  '((t :inherit fixed-pitch :background "#f5f5f5"))
+  '((((class color) (background light))
+     :inherit fixed-pitch :background "#f3f4f6" :foreground "#1f2937")
+    (((class color) (background dark))
+     :inherit fixed-pitch :background "#374151" :foreground "#f9fafb"))
   "Face for inline code."
   :group 'harp-chat)
 
 (defface harp-code-block-face
-  '((t :inherit fixed-pitch :background "#f0f0f0" :extend t))
+  '((((class color) (background light))
+     :inherit fixed-pitch :background "#f9fafb" :extend t)
+    (((class color) (background dark))
+     :inherit fixed-pitch :background "#1f2937" :extend t))
   "Face for code blocks."
   :group 'harp-chat)
 
 (defface harp-file-link-face
-  '((t :inherit link))
+  '((((class color) (background light))
+     :foreground "#2563eb" :underline t)
+    (((class color) (background dark))
+     :foreground "#60a5fa" :underline t))
   "Face for clickable file links."
   :group 'harp-chat)
 
 (defface harp-file-modified-face
-  '((t :inherit link :foreground "orange"))
+  '((((class color) (background light))
+     :foreground "#ea580c" :underline t :weight bold)
+    (((class color) (background dark))
+     :foreground "#fb923c" :underline t :weight bold))
   "Face for files that were modified."
+  :group 'harp-chat)
+
+(defface harp-header-face
+  '((((class color) (background light))
+     :foreground "#7c3aed" :weight bold :height 1.4)
+    (((class color) (background dark))
+     :foreground "#a78bfa" :weight bold :height 1.4))
+  "Face for the header title."
+  :group 'harp-chat)
+
+(defface harp-header-subtitle-face
+  '((((class color) (background light))
+     :foreground "#6b7280" :height 0.9)
+    (((class color) (background dark))
+     :foreground "#9ca3af" :height 0.9))
+  "Face for header subtitle text."
+  :group 'harp-chat)
+
+(defface harp-success-face
+  '((((class color) (background light))
+     :foreground "#059669" :weight bold)
+    (((class color) (background dark))
+     :foreground "#34d399" :weight bold))
+  "Face for success messages."
+  :group 'harp-chat)
+
+(defface harp-error-face
+  '((((class color) (background light))
+     :foreground "#dc2626" :weight bold)
+    (((class color) (background dark))
+     :foreground "#f87171" :weight bold))
+  "Face for error messages."
   :group 'harp-chat)
 
 ;;; File link support
@@ -162,15 +232,29 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 
 ;;; Markdown highlighting
 
+(defface harp-code-lang-face
+  '((((class color) (background light))
+     :foreground "#6b7280" :weight bold :height 0.85)
+    (((class color) (background dark))
+     :foreground "#9ca3af" :weight bold :height 0.85))
+  "Face for code block language labels."
+  :group 'harp-chat)
+
 (defun harp-chat--highlight-markdown (start end)
   "Apply markdown syntax highlighting to region from START to END."
   (save-excursion
     ;; Fenced code blocks: ```lang\n...\n```
     (goto-char start)
     (while (re-search-forward "```\\([a-zA-Z0-9]*\\)?\n\\(\\(?:.\\|\n\\)*?\\)```" end t)
-      (let ((lang (match-string 1))
-            (code-start (match-beginning 2))
-            (code-end (match-end 2)))
+      (let* ((fence-start (match-beginning 0))
+             (lang (match-string 1))
+             (code-start (match-beginning 2))
+             (code-end (match-end 2)))
+        ;; Hide the opening fence and add language label
+        (when (and lang (not (string-empty-p lang)))
+          (add-text-properties fence-start (1+ fence-start)
+                               `(display ,(propertize (format "─── %s " lang)
+                                                      'face 'harp-code-lang-face))))
         ;; Apply code block face
         (add-text-properties code-start code-end
                              '(face harp-code-block-face))
@@ -349,27 +433,27 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 
 (defun harp-chat--insert-separator ()
   "Insert a visual separator line."
-  (insert (propertize (make-string 50 ?─) 'face 'harp-separator-face) "\n"))
+  (insert (propertize "────────────────────────────────────────────────────"
+                      'face 'harp-separator-face) "\n"))
 
 (defun harp-chat--insert-prompt ()
   "Insert the input prompt."
   (harp-chat--insert-separator)
-  (insert (propertize "> " 'face 'harp-prompt-face))
+  (insert (propertize "❯ " 'face 'harp-prompt-face))
   (set-marker harp-chat--input-marker (point)))
 
 (defun harp-chat--insert-user-message (text)
   "Insert user message TEXT into the chat buffer."
   (goto-char harp-chat--input-marker)
   (delete-region harp-chat--input-marker (point-max))
-  (insert (propertize "User: " 'face 'harp-user-face))
+  (insert (propertize "● You\n" 'face 'harp-user-face))
   (insert text "\n\n"))
 
 (defun harp-chat--insert-assistant-start ()
   "Insert the start of an assistant message and set up streaming marker."
-  (insert (propertize "Assistant: " 'face 'harp-assistant-face))
-  (insert "\n")
+  (insert (propertize "◆ Harp\n" 'face 'harp-assistant-face))
   (let ((start (point)))
-    (insert (propertize "Status: thinking..." 'face 'harp-status-face))
+    (insert (propertize "  ◌ thinking..." 'face 'harp-status-face))
     (let ((end (point)))
       (insert "\n")
       (set-marker harp-chat--status-start start)
@@ -379,6 +463,15 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (set-marker harp-chat--assistant-marker (point))
   (set-marker harp-chat--response-start (point)))
 
+(defun harp-chat--status-symbol (text)
+  "Return appropriate symbol for status TEXT."
+  (cond
+   ((string-match-p "thinking" text) "◌")
+   ((string-match-p "drafting" text) "◐")
+   ((string-match-p "running\\|tool" text) "◑")
+   ((string-match-p "done\\|complete" text) "●")
+   (t "◌")))
+
 (defun harp-chat--set-status (text)
   "Update the status line for the current assistant response."
   (when (and harp-chat--status-start harp-chat--status-end)
@@ -387,7 +480,8 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
     (save-excursion
       (goto-char harp-chat--status-start)
       (delete-region harp-chat--status-start harp-chat--status-end)
-      (insert (propertize (format "Status: %s" text) 'face 'harp-status-face))
+      (let ((symbol (harp-chat--status-symbol text)))
+        (insert (propertize (format "  %s %s" symbol text) 'face 'harp-status-face)))
       (set-marker harp-chat--status-end (point)))))
 
 (defun harp-chat--set-status-if-default (text)
@@ -435,6 +529,16 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (decode-coding-string text 'utf-8)
     text))
 
+(defun harp-chat--tool-icon (name)
+  "Return an icon for tool NAME."
+  (cond
+   ((string-match-p "read\\|file" name) "📄")
+   ((string-match-p "write\\|edit" name) "✏️")
+   ((string-match-p "shell\\|run\\|exec" name) "⚡")
+   ((string-match-p "glob\\|list\\|dir" name) "📁")
+   ((string-match-p "grep\\|search" name) "🔍")
+   (t "⚙️")))
+
 (defun harp-chat--insert-tool-call (name input)
   "Insert a tool call display for NAME with INPUT."
   (if (string= name "set_status")
@@ -443,14 +547,16 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
              (harp-chat--set-status (string-trim summary))))
     (save-excursion
       (goto-char harp-chat--assistant-marker)
-      (insert "\n" (propertize (format "[Tool: %s]" name) 'face 'harp-tool-face))
+      (let ((icon (harp-chat--tool-icon name)))
+        (insert "\n  "
+                (propertize (format "%s %s" icon name) 'face 'harp-tool-face)))
       (when input
         (let ((input-str (if (stringp input)
                              input
                            (json-encode input))))
           (when (> (length input-str) 200)
             (setq input-str (concat (substring input-str 0 200) "...")))
-          (insert " " input-str)))
+          (insert (propertize (format " %s" input-str) 'face 'harp-status-face))))
       (insert "\n")
       (set-marker harp-chat--assistant-marker (point)))))
 
@@ -460,13 +566,18 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
     (save-excursion
       (goto-char harp-chat--assistant-marker)
       (let* ((result-str (if (> (length result) 500)
-                             (concat (substring result 0 500) "\n... [truncated]")
+                             (concat (substring result 0 500) "\n  ... [truncated]")
                            result))
              (modified-p (member name '("write_file" "edit_file")))
-             (result-start (point)))
-        (insert (propertize (format "[Result: %s]\n" name) 'face 'harp-tool-face))
+             (result-start (point))
+             (is-error (string-match-p "\\`\\(Error\\|error\\|failed\\|Failed\\)" result))
+             (icon (if is-error "✗" "✓"))
+             (face (if is-error 'harp-error-face 'harp-success-face)))
+        (insert "  " (propertize (format "%s result" icon) 'face face) "\n")
         (setq result-start (point))
-        (insert result-str "\n")
+        ;; Indent result text
+        (let ((indented (replace-regexp-in-string "^" "    " result-str)))
+          (insert indented "\n"))
         ;; Linkify file paths in the result
         (harp-chat--linkify-file-paths result-start (point) modified-p))
       (set-marker harp-chat--assistant-marker (point)))))
@@ -478,18 +589,26 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
           (input (cadr pending)))
       (save-excursion
         (goto-char harp-chat--assistant-marker)
-        (insert "\n"
-                (propertize (format "[Approve %s? (y/n)]" tool-name)
-                            'face 'harp-approval-face))
+        (insert "\n  ╭─ "
+                (propertize "Approval Required" 'face 'harp-approval-face)
+                " ─────────────────────────────╮\n")
+        (insert "  │ "
+                (propertize (format "Tool: %s" tool-name) 'face 'harp-tool-face))
         (when input
           (let ((input-str (if (stringp input) input (json-encode input))))
-            (when (> (length input-str) 300)
-              (setq input-str (concat (substring input-str 0 300) "...")))
-            (insert " " input-str)))
-        (insert "\n")
+            (when (> (length input-str) 200)
+              (setq input-str (concat (substring input-str 0 200) "...")))
+            (insert "\n  │ " (propertize input-str 'face 'harp-status-face))))
+        (insert "\n  ╰─ "
+                (propertize "Press " 'face 'harp-header-subtitle-face)
+                (propertize "y" 'face 'harp-success-face)
+                (propertize " to approve, " 'face 'harp-header-subtitle-face)
+                (propertize "n" 'face 'harp-error-face)
+                (propertize " to reject" 'face 'harp-header-subtitle-face)
+                " ─────────╯\n")
         (set-marker harp-chat--assistant-marker (point))))
     (goto-char (point-max))
-    (insert (propertize "> " 'face 'harp-prompt-face))
+    (insert (propertize "❯ " 'face 'harp-prompt-face))
     (set-marker harp-chat--input-marker (point))
     (goto-char (point-max))))
 
@@ -590,7 +709,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
          (if-let ((err (alist-get 'error result)))
              (progn
                (harp-chat--insert-streaming-text
-                (format "\n[Error: %s]" err))
+                (concat "\n" (propertize (format "✗ Error: %s" err) 'face 'harp-error-face)))
                (harp-chat--finish-response))
            ;; Process tool calls if any
            (let* ((content (alist-get 'content result))
@@ -751,7 +870,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (when (harp-approval-pending-p)
     (save-excursion
       (goto-char harp-chat--assistant-marker)
-      (insert (propertize "[Approved]\n" 'face 'harp-approval-face))
+      (insert "  " (propertize "✓ Approved" 'face 'harp-success-face) "\n\n")
       (set-marker harp-chat--assistant-marker (point)))
     (harp-approval-respond t)))
 
@@ -761,7 +880,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (when (harp-approval-pending-p)
     (save-excursion
       (goto-char harp-chat--assistant-marker)
-      (insert (propertize "[Rejected]\n" 'face 'harp-approval-face))
+      (insert "  " (propertize "✗ Rejected" 'face 'harp-error-face) "\n\n")
       (set-marker harp-chat--assistant-marker (point)))
     (harp-approval-respond nil)))
 
@@ -770,10 +889,18 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (interactive)
   (harp-cancel-request)
   (setq harp-chat--processing nil)
-  (harp-chat--insert-streaming-text "\n[Cancelled]\n")
+  (harp-chat--insert-streaming-text
+   (concat "\n" (propertize "⊘ Cancelled" 'face 'harp-status-face) "\n"))
   (harp-chat--finish-response))
 
 ;;; Buffer setup
+
+(defconst harp-chat--logo
+  "  ╭─────────────────────────────────╮
+  │  ♪  H A R P                     │
+  │     AI Coding Assistant         │
+  ╰─────────────────────────────────╯"
+  "ASCII art logo for the chat buffer.")
 
 (defun harp-chat-setup-buffer ()
   "Set up the chat buffer and return it."
@@ -782,9 +909,15 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (unless (eq major-mode 'harp-chat-mode)
         (harp-chat-mode)
         (erase-buffer)
-        (insert (propertize "Harp\n" 'face '(:weight bold :height 1.2)))
-        (insert "Type your message and press RET to send.\n")
-        (insert "Tools requiring approval will prompt with [y/n].\n\n")
+        ;; Insert logo
+        (insert (propertize harp-chat--logo 'face 'harp-header-face) "\n\n")
+        ;; Insert help hints
+        (insert (propertize "  RET " 'face 'harp-prompt-face)
+                (propertize "send message   " 'face 'harp-header-subtitle-face)
+                (propertize "y/n " 'face 'harp-prompt-face)
+                (propertize "approve/reject   " 'face 'harp-header-subtitle-face)
+                (propertize "C-c C-k " 'face 'harp-prompt-face)
+                (propertize "cancel\n\n" 'face 'harp-header-subtitle-face))
         (harp-chat--insert-prompt)
         (when-let ((proj (project-current)))
           (setq default-directory (project-root proj)))
