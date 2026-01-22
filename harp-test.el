@@ -124,10 +124,29 @@
     (harp-chat-mode)
     (harp-chat--reset-tool-usage)
     (should (equal (harp-chat--tool-usage-count "list_directory") 0))
-    (should (null (harp-chat--tool-skip-message "list_directory")))
+    (should (null (harp-chat--tool-skip-message "list_directory" nil)))
     (harp-chat--record-tool-usage "list_directory")
-    (should (string-match-p "Skipped list_directory"
-                            (harp-chat--tool-skip-message "list_directory")))))
+    (should (string-match-p "Skipped listing"
+                            (harp-chat--tool-skip-message "list_directory" nil)))))
+
+(ert-deftest harp-test-chat-tool-budget-throttle ()
+  (with-temp-buffer
+    (harp-chat-mode)
+    (let ((harp-chat-max-tool-calls 1))
+      (harp-chat--reset-tool-usage)
+      (harp-chat--record-tool-usage "read_file" nil)
+      (should (string-match-p "budget"
+                              (harp-chat--tool-skip-message "read_file" nil))))))
+
+(ert-deftest harp-test-chat-listing-detects-shell-ls ()
+  (with-temp-buffer
+    (harp-chat-mode)
+    (let ((harp-chat-listing-limit 0))
+      (harp-chat--reset-tool-usage)
+      (should (string-match-p "Skipped listing"
+                              (harp-chat--tool-skip-message
+                               "run_shell"
+                               '((command . "ls -la"))))))))
 
 (provide 'harp-test)
 ;;; harp-test.el ends here

@@ -20,6 +20,16 @@
   "Chat interface settings for harp."
   :group 'harp)
 
+(defcustom harp-chat-max-tool-calls 3
+  "Maximum external tool calls allowed per user request."
+  :type 'integer
+  :group 'harp-chat)
+
+(defcustom harp-chat-listing-limit 1
+  "Maximum directory listing calls per user request."
+  :type 'integer
+  :group 'harp-chat)
+
 (defface harp-user-face
   '((t :inherit font-lock-keyword-face :weight bold))
   "Face for user messages."
@@ -289,6 +299,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defvar-local harp-chat--tool-usage-counts nil
   "Alist of (tool-name . count) for the current user request.")
 
+(defvar-local harp-chat--tool-usage-total 0
+  "Count of external tool calls for the current user request.")
+
 (defvar-local harp-chat--response-start nil
   "Marker for the start of the current assistant response content.")
 
@@ -326,6 +339,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--pending-tool-results nil)
   (setq-local harp-chat--current-tool-calls nil)
   (setq-local harp-chat--tool-usage-counts nil)
+  (setq-local harp-chat--tool-usage-total 0)
   (setq-local harp-chat--response-start (make-marker))
   (setq-local harp-chat--status-updated nil)
   ;; Set up approval hook
@@ -551,7 +565,8 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                                              (string= (harp--msg-get 'role m) "user"))
                                            messages))))
          (input (and last-user (harp--msg-get 'content last-user)))
-         (tools (if (harp-chat--should-use-tools input)
+         (tools (if (and (harp-chat--should-use-tools input)
+                         (harp-chat--tool-budget-remaining-p))
                     (harp-get-tool-schemas)
                   (when-let ((status-tool (harp-get-tool-schema "set_status")))
                     (list status-tool)))))
@@ -625,23 +640,61 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 
 (defun harp-chat--reset-tool-usage ()
   "Reset tool usage counts for a new user request."
-  (setq harp-chat--tool-usage-counts nil))
+  (setq harp-chat--tool-usage-counts nil)
+  (setq harp-chat--tool-usage-total 0))
 
 (defun harp-chat--tool-usage-count (name)
   "Return the usage count for tool NAME."
   (or (alist-get name harp-chat--tool-usage-counts nil nil #'string=) 0))
 
-(defun harp-chat--record-tool-usage (name)
+(defun harp-chat--tool-budget-remaining-p ()
+  "Return non-nil if more external tool calls are allowed."
+  (< harp-chat--tool-usage-total (max 0 harp-chat-max-tool-calls)))
+
+(defun harp-chat--tool-input-command (input)
+  "Extract a command string from tool INPUT if present."
+  (cond
+   ((and (listp input) (consp (car input))) (alist-get 'command input))
+   ((listp input)
+    (or (plist-get input :command)
+        (plist-get input 'command)
+        (plist-get input "command")))
+   (t nil)))
+
+(defun harp-chat--listing-command-p (command)
+  "Return non-nil if COMMAND is a simple directory listing."
+  (and (stringp command)
+       (string-match-p "\\`[[:space:]]*ls\\b" command)))
+
+(defun harp-chat--listing-tool-call-p (name input)
+  "Return non-nil when NAME/INPUT represents a directory listing."
+  (or (string= name "list_directory")
+      (and (member name '("run_shell" "shell" "run_shell_command" "shell_command"))
+           (harp-chat--listing-command-p (harp-chat--tool-input-command input)))))
+
+(defun harp-chat--record-tool-usage (name &optional input)
   "Record that tool NAME was used in the current request."
   (let ((current (harp-chat--tool-usage-count name)))
     (setf (alist-get name harp-chat--tool-usage-counts nil nil #'string=)
-          (1+ current))))
+          (1+ current)))
+  (unless (harp-tool-internal-p name)
+    (setq harp-chat--tool-usage-total (1+ harp-chat--tool-usage-total))
+    (when (harp-chat--listing-tool-call-p name input)
+      (let ((listing (harp-chat--tool-usage-count "listing")))
+        (setf (alist-get "listing" harp-chat--tool-usage-counts nil nil #'string=)
+              (1+ listing))))))
 
-(defun harp-chat--tool-skip-message (name)
+(defun harp-chat--tool-skip-message (name input)
   "Return a skip message for tool NAME when it should be throttled."
-  (when (and (string= name "list_directory")
-             (>= (harp-chat--tool-usage-count name) 1))
-    "Skipped list_directory: already used in this request. Read README or a specific file instead."))
+  (cond
+   ((and (harp-chat--listing-tool-call-p name input)
+         (>= (harp-chat--tool-usage-count "listing")
+             (max 0 harp-chat-listing-limit)))
+    "Skipped listing: already used in this request. Read README or a specific file instead.")
+   ((and (not (harp-tool-internal-p name))
+         (not (harp-chat--tool-budget-remaining-p)))
+    "Skipped tool: budget reached for this request. Answer with current context or ask for a specific file.")
+   (t nil)))
 
 (defun harp-chat--execute-next-tool (remaining-tools)
   "Execute next tool in REMAINING-TOOLS list."
@@ -652,13 +705,13 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
            (id (alist-get 'id tc))
            (name (alist-get 'name tc))
            (input (alist-get 'input tc)))
-      (let ((skip-msg (harp-chat--tool-skip-message name)))
+      (let ((skip-msg (harp-chat--tool-skip-message name input)))
         (if skip-msg
             (progn
               (harp-chat--insert-tool-result name skip-msg)
               (push (list id skip-msg nil) harp-chat--pending-tool-results)
               (harp-chat--execute-next-tool (cdr remaining-tools)))
-          (harp-chat--record-tool-usage name)
+          (harp-chat--record-tool-usage name input)
           (harp-approval-execute-with-approval
            name input
            (lambda (result)
