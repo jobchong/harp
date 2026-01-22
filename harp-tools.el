@@ -1,5 +1,9 @@
 ;;; harp-tools.el --- Tool definitions for harp -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Defines tools that the LLM can invoke: file operations, shell commands, search.
 
@@ -89,7 +93,7 @@
   (let* ((value (harp--tool-extract-path input))
          (path (harp--normalize-tool-path value)))
     (unless (stringp path)
-      (error "read_file requires a file path"))
+      (error "Tool read_file requires a file path"))
     (if (file-exists-p path)
         path
       (let* ((dir (file-name-directory path))
@@ -140,7 +144,7 @@
     (format "Unknown tool: %s" name)))
 
 (defun harp-get-tool-schemas ()
-  "Return list of tool schemas for API calls."
+  "Return list of tool schemas for the LLM API."
   harp-tools-schemas)
 
 (defun harp-get-tool-schema (name)

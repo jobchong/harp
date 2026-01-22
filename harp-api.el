@@ -1,5 +1,9 @@
 ;;; harp-api.el --- API abstraction for LLM providers -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Provides abstraction layer for Anthropic and OpenAI APIs with streaming support.
 
@@ -334,7 +338,7 @@
                  (or (alist-get 'name tc) "<unknown>"))))))
 
 (defun harp--stream-process-filter (proc chunk)
-  "Process filter for streaming responses."
+  "Process filter for PROC handling streaming response CHUNK."
   (when harp--stream-orig-filter
     (funcall harp--stream-orig-filter proc chunk))
   (message "harp: received chunk (%d bytes)" (length chunk))

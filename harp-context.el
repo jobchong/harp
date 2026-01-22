@@ -1,5 +1,9 @@
 ;;; harp-context.el --- Context gathering for harp -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Gathers project context (files, git status, etc.) for LLM prompts.
 
@@ -101,7 +105,7 @@
                          content))))))
 
 (defun harp-context-gather (file-buffer)
-  "Gather context for LLM prompt. FILE-BUFFER is the file pane buffer."
+  "Gather context for LLM prompt.  FILE-BUFFER is the file pane buffer."
   (let ((ctx '())
         root)
     ;; Project info
@@ -153,7 +157,7 @@ You have access to tools for reading and writing files, running shell commands, 
 - Do not ask for permission to use tools; proceed when needed to answer the user
 - Keep responses concise but informative
 - When calling tools that accept paths, keep user-provided paths verbatim; do not substitute home directory usernames; ~ is acceptable"
-  "Template for the system prompt. Format args:
+  "Template for the system prompt.  Format args:
 1. Platform
 2. Emacs version
 3. Working directory

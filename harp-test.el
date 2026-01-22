@@ -1,5 +1,9 @@
 ;;; harp-test.el --- Tests for harp -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; ERT tests covering core tool and context behavior.
 

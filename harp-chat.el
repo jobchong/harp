@@ -1,8 +1,12 @@
 ;;; harp-chat.el --- Chat buffer interface for harp -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Provides the chat buffer major mode and interaction handling.
-;; Users type messages and press RET to send. No minibuffer interaction needed.
+;; Users type messages and press RET to send.  No minibuffer interaction needed.
 
 ;;; Code:
 
@@ -270,7 +274,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
     (harp-chat--linkify-file-paths start end)))
 
 (defun harp-chat--fontify-code-block (lang start end)
-  "Apply LANG-specific fontification to code block from START to END."
+  "Apply fontification for LANG to code block from START to END."
   (let* ((mode-name (intern (concat lang "-mode")))
          (mode (and (fboundp mode-name) mode-name))
          (target-buffer (current-buffer)))
@@ -473,7 +477,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
    (t "◌")))
 
 (defun harp-chat--set-status (text)
-  "Update the status line for the current assistant response."
+  "Update the status line to TEXT for the current assistant response."
   (when (and harp-chat--status-start harp-chat--status-end)
     (setq harp-chat--status-text text)
     (setq harp-chat--status-updated t)
@@ -485,7 +489,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (set-marker harp-chat--status-end (point)))))
 
 (defun harp-chat--set-status-if-default (text)
-  "Update the status line when it is still on a default value."
+  "Update the status line to TEXT when it is still on a default value."
   (when (member harp-chat--status-text
                 '("thinking..." "drafting response..." "running tools..."))
     (harp-chat--set-status text)))
@@ -767,7 +771,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (or (alist-get name harp-chat--tool-usage-counts nil nil #'string=) 0))
 
 (defun harp-chat--tool-budget-remaining-p ()
-  "Return non-nil if more external tool calls are allowed."
+  "Return non-nil if the tool budget has not been exhausted."
   (< harp-chat--tool-usage-total (max 0 harp-chat-max-tool-calls)))
 
 (defun harp-chat--tool-input-command (input)
@@ -792,7 +796,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
            (harp-chat--listing-command-p (harp-chat--tool-input-command input)))))
 
 (defun harp-chat--record-tool-usage (name &optional input)
-  "Record that tool NAME was used in the current request."
+  "Record that tool NAME with INPUT was used in the current request."
   (let ((current (harp-chat--tool-usage-count name)))
     (setf (alist-get name harp-chat--tool-usage-counts nil nil #'string=)
           (1+ current)))
@@ -804,7 +808,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
               (1+ listing))))))
 
 (defun harp-chat--tool-skip-message (name input)
-  "Return a skip message for tool NAME when it should be throttled."
+  "Return a skip message for tool NAME with INPUT when it should be throttled."
   (cond
    ((and (harp-chat--listing-tool-call-p name input)
          (>= (harp-chat--tool-usage-count "listing")
@@ -846,7 +850,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                (harp-chat--execute-next-tool (cdr remaining-tools))))))))))
 
 (defun harp-chat--tools-complete ()
-  "Called when all tools have been executed. Add results and continue loop."
+  "Add tool results to messages and continue the agent loop."
   ;; Add tool results to messages
   (dolist (result harp-chat--pending-tool-results)
     (push (harp-make-tool-result (nth 0 result)

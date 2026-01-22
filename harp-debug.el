@@ -1,5 +1,9 @@
 ;;; harp-debug.el --- Debug logging for harp -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Lightweight debug logging helpers for harp components.
 
@@ -112,7 +116,7 @@ REASON is an optional label for the dump directory."
     dir))
 
 (defun harp-debug-maybe-dump-state (&optional reason)
-  "Dump state when `harp-debug-auto-dump' is non-nil."
+  "Dump state with REASON when `harp-debug-auto-dump' is non-nil."
   (when harp-debug-auto-dump
     (harp-debug-dump-state reason)))
 

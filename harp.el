@@ -1,10 +1,10 @@
 ;;; harp.el --- Emacs coding assistant harp -*- lexical-binding: t -*-
 
-;; Author: Emacs Harp
+;; Author: Job Chong
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: tools, convenience, ai
-;; URL: https://github.com/username/emacs-harp
+;; URL: https://github.com/jobchong/harp
 
 ;;; Commentary:
 ;; An Emacs coding assistant harp similar to Claude Code or Codex.
@@ -41,6 +41,11 @@
 
 (defvar harp-chat-buffer-name)
 (defvar harp-approval-mode)
+(defvar harp-api-key-anthropic)
+(defvar harp-api-key-openai)
+(defvar harp-model)
+(defvar harp-model-provider-alist)
+(defvar harp-default-provider)
 
 ;;; Customization
 

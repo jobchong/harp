@@ -1,5 +1,9 @@
 ;;; harp-approval.el --- Approval system for tool execution -*- lexical-binding: t -*-
 
+;; Author: Job Chong
+;; URL: https://github.com/jobchong/harp
+;; Part of harp.el
+
 ;;; Commentary:
 ;; Configurable approval system for dangerous tool operations.
 ;; Supports global defaults and per-project overrides.
@@ -93,7 +97,7 @@ CALLBACK is called with t if approved, nil if rejected."
 
 (defvar harp-approval-request-hook nil
   "Hook run when approval is requested.
-Called with no arguments. Use `harp-approval-get-pending' to get details.")
+Called with no arguments.  Use `harp-approval-get-pending' to get details.")
 
 ;;; Integration helper
 

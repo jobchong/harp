@@ -1,1 +1,21 @@
+# Byte-compiled files
 *.elc
+
+# Emacs backup and autosave
+*~
+\#*\#
+.#*
+
+# Package artifacts
+*-autoloads.el
+*-pkg.el
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor files
+*.swp
+*.swo
+.idea/
+.vscode/
