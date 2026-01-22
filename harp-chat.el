@@ -286,6 +286,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defvar-local harp-chat--current-tool-calls nil
   "Tool calls from the current response, for building assistant message.")
 
+(defvar-local harp-chat--tool-usage-counts nil
+  "Alist of (tool-name . count) for the current user request.")
+
 (defvar-local harp-chat--response-start nil
   "Marker for the start of the current assistant response content.")
 
@@ -322,6 +325,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--processing nil)
   (setq-local harp-chat--pending-tool-results nil)
   (setq-local harp-chat--current-tool-calls nil)
+  (setq-local harp-chat--tool-usage-counts nil)
   (setq-local harp-chat--response-start (make-marker))
   (setq-local harp-chat--status-updated nil)
   ;; Set up approval hook
@@ -533,6 +537,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
     ;; Start processing
     (setq harp-chat--processing t)
     (setq harp-chat--current-tool-calls nil)
+    (harp-chat--reset-tool-usage)
     (harp-chat--insert-assistant-start)
     ;; Call API
     (harp-chat--call-api)))
@@ -618,6 +623,26 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
                                     tool-hints)))
       contains-hint)))
 
+(defun harp-chat--reset-tool-usage ()
+  "Reset tool usage counts for a new user request."
+  (setq harp-chat--tool-usage-counts nil))
+
+(defun harp-chat--tool-usage-count (name)
+  "Return the usage count for tool NAME."
+  (or (alist-get name harp-chat--tool-usage-counts nil nil #'string=) 0))
+
+(defun harp-chat--record-tool-usage (name)
+  "Record that tool NAME was used in the current request."
+  (let ((current (harp-chat--tool-usage-count name)))
+    (setf (alist-get name harp-chat--tool-usage-counts nil nil #'string=)
+          (1+ current))))
+
+(defun harp-chat--tool-skip-message (name)
+  "Return a skip message for tool NAME when it should be throttled."
+  (when (and (string= name "list_directory")
+             (>= (harp-chat--tool-usage-count name) 1))
+    "Skipped list_directory: already used in this request. Read README or a specific file instead."))
+
 (defun harp-chat--execute-next-tool (remaining-tools)
   "Execute next tool in REMAINING-TOOLS list."
   (if (null remaining-tools)
@@ -627,19 +652,26 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
            (id (alist-get 'id tc))
            (name (alist-get 'name tc))
            (input (alist-get 'input tc)))
-      (harp-approval-execute-with-approval
-       name input
-       (lambda (result)
-         (with-current-buffer harp-chat-buffer-name
-           (let* ((payload (if (and (listp result) (plist-member result :result))
-                               result
-                             (list :result (format "%s" result) :error nil)))
-                  (result-str (plist-get payload :result))
-                  (is-error (plist-get payload :error)))
-             (harp-chat--insert-tool-result name result-str)
-             (push (list id result-str is-error)
-                   harp-chat--pending-tool-results))
-           (harp-chat--execute-next-tool (cdr remaining-tools))))))))
+      (let ((skip-msg (harp-chat--tool-skip-message name)))
+        (if skip-msg
+            (progn
+              (harp-chat--insert-tool-result name skip-msg)
+              (push (list id skip-msg nil) harp-chat--pending-tool-results)
+              (harp-chat--execute-next-tool (cdr remaining-tools)))
+          (harp-chat--record-tool-usage name)
+          (harp-approval-execute-with-approval
+           name input
+           (lambda (result)
+             (with-current-buffer harp-chat-buffer-name
+               (let* ((payload (if (and (listp result) (plist-member result :result))
+                                   result
+                                 (list :result (format "%s" result) :error nil)))
+                      (result-str (plist-get payload :result))
+                      (is-error (plist-get payload :error)))
+                 (harp-chat--insert-tool-result name result-str)
+                 (push (list id result-str is-error)
+                       harp-chat--pending-tool-results))
+               (harp-chat--execute-next-tool (cdr remaining-tools))))))))))
 
 (defun harp-chat--tools-complete ()
   "Called when all tools have been executed. Add results and continue loop."

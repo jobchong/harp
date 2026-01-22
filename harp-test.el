@@ -8,6 +8,7 @@
 (require 'ert)
 (require 'harp-tools)
 (require 'harp-context)
+(require 'harp-chat)
 
 (defmacro harp-test--with-temp-dir (dirvar &rest body)
   "Create a temp dir bound to DIRVAR and eval BODY."
@@ -117,6 +118,16 @@
               (should (string-match-p "^abcde" content))
               (should (string-match-p "truncated" content)))
           (kill-buffer buf))))))
+
+(ert-deftest harp-test-chat-list-directory-throttle ()
+  (with-temp-buffer
+    (harp-chat-mode)
+    (harp-chat--reset-tool-usage)
+    (should (equal (harp-chat--tool-usage-count "list_directory") 0))
+    (should (null (harp-chat--tool-skip-message "list_directory")))
+    (harp-chat--record-tool-usage "list_directory")
+    (should (string-match-p "Skipped list_directory"
+                            (harp-chat--tool-skip-message "list_directory")))))
 
 (provide 'harp-test)
 ;;; harp-test.el ends here
