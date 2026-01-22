@@ -6,6 +6,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'harp-tools)
 (require 'harp-context)
 (require 'harp-chat)
@@ -118,6 +119,24 @@
               (should (string-match-p "^abcde" content))
               (should (string-match-p "truncated" content)))
           (kill-buffer buf))))))
+
+(ert-deftest harp-test-context-readme-content ()
+  (harp-test--with-temp-dir dir
+    (let ((harp-context-include-git nil)
+          (harp-context-include-readme t)
+          (readme-path (expand-file-name "README.md" dir)))
+      (with-temp-file readme-path
+        (insert "Harp readme"))
+      (cl-letf (((symbol-function 'project-current)
+                 (lambda (&optional _dir) (cons 'transient dir)))
+                ((symbol-function 'project-root)
+                 (lambda (_proj) dir)))
+        (let* ((default-directory dir)
+               (ctx (harp-context-gather nil))
+               (readme (alist-get 'readme ctx)))
+          (should (equal (plist-get readme :path) readme-path))
+          (should (string-match-p "Harp readme"
+                                  (plist-get readme :content))))))))
 
 (ert-deftest harp-test-chat-list-directory-throttle ()
   (with-temp-buffer

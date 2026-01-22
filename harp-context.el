@@ -6,6 +6,7 @@
 ;;; Code:
 
 (require 'project)
+(require 'cl-lib)
 
 ;;; Customization
 
@@ -20,6 +21,11 @@
 
 (defcustom harp-context-include-file-content t
   "Whether to include current file content in context."
+  :type 'boolean
+  :group 'harp-context)
+
+(defcustom harp-context-include-readme t
+  "Whether to include README content from the project root."
   :type 'boolean
   :group 'harp-context)
 
@@ -73,12 +79,35 @@
                       "\n... [truncated]")
             content))))))
 
+(defun harp-context--readme-path (root)
+  "Return a README path under ROOT, or nil."
+  (let ((candidates '("README.md" "README" "readme.md" "readme")))
+    (cl-find-if (lambda (name)
+                  (file-exists-p (expand-file-name name root)))
+                candidates)))
+
+(defun harp-context--readme-content (root)
+  "Get README content under ROOT, truncated if too large."
+  (when (and root harp-context-include-readme)
+    (when-let ((name (harp-context--readme-path root)))
+      (let* ((path (expand-file-name name root))
+             (content (with-temp-buffer
+                        (insert-file-contents path)
+                        (buffer-string))))
+        (list :path path
+              :content (if (> (length content) harp-context-max-file-size)
+                           (concat (substring content 0 harp-context-max-file-size)
+                                   "\n... [truncated]")
+                         content))))))
+
 (defun harp-context-gather (file-buffer)
   "Gather context for LLM prompt. FILE-BUFFER is the file pane buffer."
-  (let ((ctx '()))
+  (let ((ctx '())
+        root)
     ;; Project info
-    (when-let ((root (harp-context--project-root)))
-      (push `(project-root . ,root) ctx))
+    (when-let ((proj-root (harp-context--project-root)))
+      (setq root proj-root)
+      (push `(project-root . ,proj-root) ctx))
     ;; Git info
     (when harp-context-include-git
       (when-let ((branch (harp-context--git-branch)))
@@ -91,6 +120,9 @@
       (push `(current-file . ,file-info) ctx))
     (when-let ((content (harp-context--current-file-content file-buffer)))
       (push `(current-file-content . ,content) ctx))
+    ;; README
+    (when-let ((readme (and root (harp-context--readme-content root))))
+      (push `(readme . ,readme) ctx))
     ;; Working directory
     (push `(working-directory . ,default-directory) ctx)
     ;; Platform info
@@ -109,7 +141,7 @@ You have access to tools for reading and writing files, running shell commands, 
 - Platform: %s
 - Emacs version: %s
 - Working directory: %s
-%s%s%s
+%s%s%s%s
 
 ## Guidelines
 - Read files before modifying them to understand the context
@@ -127,7 +159,8 @@ You have access to tools for reading and writing files, running shell commands, 
 3. Working directory
 4. Project root (or empty)
 5. Git info (or empty)
-6. Current file info (or empty)")
+6. Current file info (or empty)
+7. README content (or empty)")
 
 (defun harp-context-build-system-prompt (context)
   "Build system prompt string from CONTEXT alist."
@@ -147,10 +180,15 @@ You have access to tools for reading and writing files, running shell commands, 
                       (format "- Current file: %s (%s)\n"
                               (alist-get 'path file-info)
                               (alist-get 'mode file-info))
-                    "")))
+                    ""))
+        (readme-str (if-let ((readme (alist-get 'readme context)))
+                        (format "- README: %s\n```\n%s\n```\n"
+                                (plist-get readme :path)
+                                (plist-get readme :content))
+                      "")))
     (format harp-system-prompt-template
             platform emacs-ver working-dir
-            project-str git-str file-str)))
+            project-str git-str file-str readme-str)))
 
 (provide 'harp-context)
 ;;; harp-context.el ends here
