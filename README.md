@@ -90,6 +90,13 @@ Responses are automatically highlighted:
 Tool approvals are controlled by `harp-approval-mode` and can be overridden
 per project with `harp-project-approval-alist`.
 
+## Slash Skills
+
+Harp discovers skills from `.codex/skills`, `.agents/skills`, and `.claude/skills`
+in the working directory and parent directories up to the git root. Invoke them
+with `/skill-name your request`. Harp injects the skill body into the system
+prompt and sends only the remaining text as the user message.
+
 ## Development
 
 ```bash

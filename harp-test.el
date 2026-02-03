@@ -14,6 +14,7 @@
 (require 'harp-tools)
 (require 'harp-context)
 (require 'harp-chat)
+(require 'harp-skills)
 
 (defmacro harp-test--with-temp-dir (dirvar &rest body)
   "Create a temp dir bound to DIRVAR and eval BODY."
@@ -104,6 +105,60 @@
   (let ((result (harp-execute-tool "run_shell" '((command . "printf 'hi'")))))
     (should (string-match-p "Exit code: 0" result))
     (should (string-match-p "hi" result))))
+
+(ert-deftest harp-test-slash-skills-discover ()
+  (harp-test--with-temp-dir dir
+    (let* ((skills-dir (expand-file-name ".claude/skills/foo" dir))
+           (skill-file (expand-file-name "SKILL.md" skills-dir)))
+      (make-directory skills-dir t)
+      (with-temp-file skill-file
+        (insert "---\nname: foo\ndescription: Foo skill\n---\nBody\n"))
+      (let ((skills (harp-skills-discover dir nil)))
+        (should (cl-find-if (lambda (s)
+                              (string= (alist-get 'name s) "foo"))
+                            skills))))))
+
+(ert-deftest harp-test-slash-skills-parent-precedence ()
+  (harp-test--with-temp-dir dir
+    (let* ((root-skill-dir (expand-file-name ".claude/skills/foo" dir))
+           (root-skill-file (expand-file-name "SKILL.md" root-skill-dir))
+           (subdir (expand-file-name "sub" dir))
+           (sub-claude-dir (expand-file-name ".claude/skills/foo" subdir))
+           (sub-codex-dir (expand-file-name ".codex/skills/foo" subdir))
+           (sub-claude-file (expand-file-name "SKILL.md" sub-claude-dir))
+           (sub-codex-file (expand-file-name "SKILL.md" sub-codex-dir)))
+      (make-directory root-skill-dir t)
+      (make-directory sub-claude-dir t)
+      (make-directory sub-codex-dir t)
+      (with-temp-file root-skill-file
+        (insert "---\nname: foo\ndescription: root\n---\nRoot\n"))
+      (with-temp-file sub-claude-file
+        (insert "---\nname: foo\ndescription: sub-claude\n---\nSub\n"))
+      (with-temp-file sub-codex-file
+        (insert "---\nname: foo\ndescription: sub-codex\n---\nSub\n"))
+      (let* ((skills (harp-skills-discover subdir dir))
+             (skill (cl-find-if (lambda (s)
+                                  (string= (alist-get 'name s) "foo"))
+                                skills)))
+        (should (equal (alist-get 'path skill) sub-codex-file))
+        (should (equal (alist-get 'source skill) ".codex"))))))
+
+(ert-deftest harp-test-slash-skills-parse-invocation ()
+  (harp-test--with-temp-dir dir
+    (let* ((skills-dir (expand-file-name ".claude/skills/foo" dir))
+           (skill-file (expand-file-name "SKILL.md" skills-dir)))
+      (make-directory skills-dir t)
+      (with-temp-file skill-file
+        (insert "---\nname: foo\ndescription: Foo skill\n---\nBody text\n"))
+      (let* ((skills (harp-skills-discover dir nil))
+             (parsed (harp-skills-parse-invocation "/foo do bar" skills 100))
+             (skill (plist-get parsed :skill)))
+        (should (equal (plist-get parsed :user-input) "do bar"))
+        (should (string-match-p "Body text"
+                                (alist-get 'body skill))))
+      (let* ((skills (harp-skills-discover dir nil))
+             (parsed (harp-skills-parse-invocation "/foo" skills 100)))
+        (should (equal (plist-get parsed :user-input) ""))))))
 
 (ert-deftest harp-test-context-current-file-content ()
   (harp-test--with-temp-dir dir

@@ -36,6 +36,7 @@ Default `harp-model-provider-alist`:
 - `harp-context-include-git` (boolean, default `t`): Include git status/branch in prompt.
 - `harp-context-include-file-content` (boolean, default `t`): Include current file content.
 - `harp-context-include-readme` (boolean, default `t`): Include README content.
+- `harp-context-include-slash-skills` (boolean, default `t`): Include slash skills discovered under `.codex/skills`, `.agents/skills`, or `.claude/skills`.
 - `harp-context-max-file-size` (integer, default `50000`): Max chars per file included.
 
 ## Debugging (`harp-debug`)

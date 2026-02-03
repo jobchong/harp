@@ -29,6 +29,7 @@
 (let ((load-prefer-newer t))
   (require 'harp-debug)
   (require 'harp-api)
+  (require 'harp-skills)
   (require 'harp-tools)
   (require 'harp-approval)
   (require 'harp-context)

@@ -14,6 +14,7 @@
 (require 'harp-tools)
 (require 'harp-approval)
 (require 'harp-context)
+(require 'harp-skills)
 (require 'harp-debug)
 (require 'seq)
 (require 'project)
@@ -682,20 +683,46 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
     ;; Call API
     (harp-chat--call-api)))
 
+(defun harp-chat--replace-last-user-message (content)
+  "Replace the most recent user message content in history."
+  (let ((msg (seq-find (lambda (m)
+                         (string= (harp--msg-get 'role m) "user"))
+                       harp-chat--messages)))
+    (when msg
+      (if (assoc "content" msg)
+          (setf (alist-get "content" msg nil nil #'string=) content)
+        (setf (alist-get 'content msg) content)))))
+
 (defun harp-chat--call-api ()
   "Make API call with current messages."
   (let* ((context (harp-context-gather harp-chat--file-buffer))
-         (system (harp-context-build-system-prompt context))
          (messages (reverse harp-chat--messages))
          (last-user (car (last (seq-filter (lambda (m)
                                              (string= (harp--msg-get 'role m) "user"))
                                            messages))))
          (input (and last-user (harp--msg-get 'content last-user)))
-         (tools (if (and (harp-chat--should-use-tools input)
+         (skills (alist-get 'slash-skills context))
+         (parsed (and skills
+                      (harp-skills-parse-invocation
+                       input skills harp-context-max-file-size)))
+         (active (plist-get parsed :skill))
+         (user-input (plist-get parsed :user-input))
+         system
+         tools)
+    (when active
+      (let ((final-input (if (string-empty-p user-input)
+                             "Use the active slash skill."
+                           user-input)))
+        (harp-chat--replace-last-user-message final-input)
+        (setq input final-input)
+        (setf (alist-get 'active-skill context) active)
+        (setq messages (reverse harp-chat--messages))))
+    (setq system (harp-context-build-system-prompt context))
+    (setq tools (if (and (harp-chat--should-use-tools input)
                          (harp-chat--tool-budget-remaining-p))
                     (harp-get-tool-schemas)
                   (when-let ((status-tool (harp-get-tool-schema "set_status")))
-                    (list status-tool)))))
+                    (list status-tool))))
     (harp-api-call-streaming
      messages system tools
      ;; On event

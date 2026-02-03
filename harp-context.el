@@ -11,6 +11,8 @@
 
 (require 'project)
 (require 'cl-lib)
+(require 'subr-x)
+(require 'harp-skills)
 
 ;;; Customization
 
@@ -30,6 +32,11 @@
 
 (defcustom harp-context-include-readme t
   "Whether to include README content from the project root."
+  :type 'boolean
+  :group 'harp-context)
+
+(defcustom harp-context-include-slash-skills t
+  "Whether to include discovered slash skills in context."
   :type 'boolean
   :group 'harp-context)
 
@@ -127,6 +134,12 @@
     ;; README
     (when-let ((readme (and root (harp-context--readme-content root))))
       (push `(readme . ,readme) ctx))
+    ;; Slash skills
+    (when harp-context-include-slash-skills
+      (let* ((git-root (harp-context--git-root))
+             (skills (harp-skills-discover default-directory git-root)))
+        (when skills
+          (push `(slash-skills . ,skills) ctx))))
     ;; Working directory
     (push `(working-directory . ,default-directory) ctx)
     ;; Platform info
@@ -145,7 +158,7 @@ You have access to tools for reading and writing files, running shell commands, 
 - Platform: %s
 - Emacs version: %s
 - Working directory: %s
-%s%s%s%s
+%s%s%s%s%s%s
 
 ## Guidelines
 - Read files before modifying them to understand the context
@@ -164,7 +177,9 @@ You have access to tools for reading and writing files, running shell commands, 
 4. Project root (or empty)
 5. Git info (or empty)
 6. Current file info (or empty)
-7. README content (or empty)")
+7. README content (or empty)
+8. Slash skills (or empty)
+9. Active skill (or empty)")
 
 (defun harp-context-build-system-prompt (context)
   "Build system prompt string from CONTEXT alist."
@@ -189,10 +204,41 @@ You have access to tools for reading and writing files, running shell commands, 
                         (format "- README: %s\n```\n%s\n```\n"
                                 (plist-get readme :path)
                                 (plist-get readme :content))
-                      "")))
+                      ""))
+        (skills-str
+         (if-let ((skills (alist-get 'slash-skills context)))
+             (concat "## Slash Skills\n"
+                     (mapconcat
+                      (lambda (skill)
+                        (let* ((name (alist-get 'name skill))
+                               (desc (string-trim
+                                      (or (alist-get 'description skill) "")))
+                               (source (alist-get 'source skill))
+                               (path (alist-get 'path skill)))
+                          (if (string-empty-p desc)
+                              (format "- /%s (%s, %s)" name source path)
+                            (format "- /%s — %s (%s, %s)"
+                                    name desc source path))))
+                      skills
+                      "\n")
+                     "\n")
+           ""))
+        (active-skill-str
+         (if-let ((skill (alist-get 'active-skill context)))
+             (let* ((name (alist-get 'name skill))
+                    (path (alist-get 'path skill))
+                    (body (or (alist-get 'body skill) ""))
+                    (body (if (> (length body) harp-context-max-file-size)
+                              (concat (substring body 0 harp-context-max-file-size)
+                                      "\n... [truncated]")
+                            body)))
+               (format "## Active Slash Skill\n- Name: /%s\n- Path: %s\n```\n%s\n```\n"
+                       name path body))
+           "")))
     (format harp-system-prompt-template
             platform emacs-ver working-dir
-            project-str git-str file-str readme-str)))
+            project-str git-str file-str readme-str
+            skills-str active-skill-str)))
 
 (provide 'harp-context)
 ;;; harp-context.el ends here
