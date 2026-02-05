@@ -220,6 +220,27 @@
                                   (string= cand "question"))
                                 cands))))))))
 
+(ert-deftest harp-test-slash-tab-complete-first ()
+  (harp-test--with-temp-dir dir
+    (let* ((commands-dir (expand-file-name ".claude/commands" dir))
+           (add-file (expand-file-name "add.md" commands-dir))
+           (adv-file (expand-file-name "advertise.md" commands-dir)))
+      (make-directory commands-dir t)
+      (with-temp-file add-file
+        (insert "Add\n"))
+      (with-temp-file adv-file
+        (insert "Advertise\n"))
+      (with-temp-buffer
+        (let ((default-directory dir)
+              (harp-context-include-slash-skills t))
+          (harp-chat-mode)
+          (harp-chat--insert-prompt)
+          (insert "/a")
+          (harp-chat--slash-complete-or-indent)
+          (should (equal (buffer-substring-no-properties
+                          harp-chat--input-marker (point-max))
+                         "/add")))))))
+
 (ert-deftest harp-test-context-current-file-content ()
   (harp-test--with-temp-dir dir
     (let ((harp-context-include-git nil)

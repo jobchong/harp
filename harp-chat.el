@@ -408,6 +408,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map text-mode-map)
     (define-key map (kbd "RET") #'harp-chat-send-or-approve)
+    (define-key map (kbd "TAB") #'harp-chat--slash-complete-or-indent)
     (define-key map (kbd "C-c C-c") #'harp-chat-send-or-approve)
     (define-key map (kbd "C-c C-k") #'harp-chat-cancel)
     ;; File link navigation
@@ -437,7 +438,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   ;; Set up approval hook
   (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t)
   (add-hook 'completion-at-point-functions #'harp-chat--slash-skill-capf nil t)
-  (add-hook 'post-self-insert-hook #'harp-chat--maybe-trigger-slash-completion nil t))
+  (add-hook 'post-command-hook #'harp-chat--maybe-trigger-slash-completion nil t))
 
 ;;; Display functions
 
@@ -674,6 +675,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (interactive)
   (when harp-chat--processing
     (user-error "Already processing a request"))
+  (harp-chat--slash-hide-completions)
   (let ((input (string-trim
                 (buffer-substring-no-properties
                  harp-chat--input-marker (point-max)))))
@@ -737,24 +739,97 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (list start end (or names '()) :exclusive 'yes))))
 
 (defvar-local harp-chat--slash-completion-timer nil
-  "Idle timer for auto-triggering slash completion.")
+  "Idle timer for refreshing slash completion list.")
+
+(defvar-local harp-chat--slash-completions-prefix nil
+  "Last prefix used to render slash completions.")
+
+(defvar-local harp-chat--slash-completions-candidates nil
+  "Last candidate list rendered for slash completions.")
+
+(defun harp-chat--slash-candidates (prefix)
+  "Return slash completion candidates for PREFIX."
+  (let ((skills (harp-chat--slash-skills))
+        (cands '()))
+    (dolist (skill skills (nreverse cands))
+      (let ((name (alist-get 'name skill)))
+        (when (and name (string-prefix-p prefix name))
+          (push name cands))))))
+
+(defun harp-chat--completion-replace (start end text)
+  "Replace region between START and END with TEXT."
+  (let ((inhibit-read-only t))
+    (goto-char start)
+    (delete-region start end)
+    (insert text)))
+
+(defun harp-chat--slash-hide-completions ()
+  "Hide the completions window and clear cached slash completions."
+  (setq harp-chat--slash-completions-prefix nil)
+  (setq harp-chat--slash-completions-candidates nil)
+  (minibuffer-hide-completions))
+
+(defun harp-chat--slash-show-completions (start end prefix candidates)
+  "Show slash completion CANDIDATES for PREFIX replacing START..END."
+  (let* ((buffer (get-buffer-create "*Completions*"))
+         (standard-output buffer)
+         (completion-base-position (list start end))
+         (completion-list-insert-choice-function #'harp-chat--completion-replace)
+         (completion-show-help nil))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)))
+    (display-completion-list candidates)
+    (display-buffer buffer)
+    (setq harp-chat--slash-completions-prefix prefix)
+    (setq harp-chat--slash-completions-candidates candidates)))
+
+(defun harp-chat--slash-refresh-current ()
+  "Refresh the slash completion list for the current buffer state."
+  (if (or (harp-approval-pending-p)
+          (null harp-chat--input-marker)
+          (< (point) harp-chat--input-marker))
+      (harp-chat--slash-hide-completions)
+    (if-let ((bounds (harp-chat--slash-token-bounds)))
+        (let* ((start (car bounds))
+               (end (cdr bounds))
+               (prefix (buffer-substring-no-properties start end))
+               (candidates (harp-chat--slash-candidates prefix)))
+          (if (null candidates)
+              (harp-chat--slash-hide-completions)
+            (unless (and (equal prefix harp-chat--slash-completions-prefix)
+                         (equal candidates harp-chat--slash-completions-candidates))
+              (harp-chat--slash-show-completions start end prefix candidates))))
+      (harp-chat--slash-hide-completions))))
+
+(defun harp-chat--slash-refresh (buffer)
+  "Refresh slash completions for BUFFER."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (setq harp-chat--slash-completion-timer nil)
+      (harp-chat--slash-refresh-current))))
 
 (defun harp-chat--maybe-trigger-slash-completion ()
-  "Auto-trigger slash skill completion when typing in a slash token."
-  (when (harp-chat--slash-token-bounds)
-    (when harp-chat--slash-completion-timer
-      (cancel-timer harp-chat--slash-completion-timer))
-    (setq harp-chat--slash-completion-timer
-          (run-with-idle-timer
-           0.05 nil
-           (lambda (buf)
-             (when (buffer-live-p buf)
-               (with-current-buffer buf
-                 (setq harp-chat--slash-completion-timer nil)
-                 (let ((capf (harp-chat--slash-skill-capf)))
-                   (when (and capf (nth 2 capf) (> (length (nth 2 capf)) 0))
-                     (completion-at-point))))))
-           (current-buffer)))))
+  "Auto-refresh slash completion list when editing."
+  (when harp-chat--slash-completion-timer
+    (cancel-timer harp-chat--slash-completion-timer))
+  (setq harp-chat--slash-completion-timer
+        (run-with-idle-timer
+         0.05 nil #'harp-chat--slash-refresh (current-buffer))))
+
+(defun harp-chat--slash-complete-or-indent ()
+  "Complete the current slash token to the first match, or indent."
+  (interactive)
+  (if-let ((bounds (harp-chat--slash-token-bounds)))
+      (let* ((start (car bounds))
+             (end (cdr bounds))
+             (prefix (buffer-substring-no-properties start end))
+             (candidates (harp-chat--slash-candidates prefix)))
+        (if (null candidates)
+            (indent-for-tab-command)
+          (harp-chat--completion-replace start end (car candidates))
+          (harp-chat--slash-refresh-current)))
+    (indent-for-tab-command)))
 
 (defun harp-chat--call-api ()
   "Make API call with current messages."
