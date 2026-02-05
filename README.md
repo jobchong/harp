@@ -26,6 +26,18 @@ Manual setup:
 (require 'harp)
 ```
 
+Project setup (hooks, docs sync, optional compile):
+
+```bash
+./scripts/setup.sh
+```
+
+To install Emacs and byte-compile in one step:
+
+```bash
+./scripts/setup.sh --install-emacs --byte-compile
+```
+
 ## Configure
 
 ```elisp

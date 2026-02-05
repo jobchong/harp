@@ -435,7 +435,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--response-start (make-marker))
   (setq-local harp-chat--status-updated nil)
   ;; Set up approval hook
-  (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t))
+  (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t)
+  (add-hook 'completion-at-point-functions #'harp-chat--slash-skill-capf nil t)
+  (add-hook 'post-self-insert-hook #'harp-chat--maybe-trigger-slash-completion nil t))
 
 ;;; Display functions
 
@@ -447,15 +449,21 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defun harp-chat--insert-prompt ()
   "Insert the input prompt."
   (harp-chat--insert-separator)
-  (insert (propertize "❯ " 'face 'harp-prompt-face))
+  (let ((inhibit-read-only t))
+    (insert (propertize "❯ " 'face 'harp-prompt-face
+                        'read-only t
+                        'cursor-intangible t
+                        'rear-nonsticky '(read-only cursor-intangible field)
+                        'field 'harp-prompt)))
   (set-marker harp-chat--input-marker (point)))
 
 (defun harp-chat--insert-user-message (text)
   "Insert user message TEXT into the chat buffer."
-  (goto-char harp-chat--input-marker)
-  (delete-region harp-chat--input-marker (point-max))
-  (insert (propertize "● You\n" 'face 'harp-user-face))
-  (insert text "\n\n"))
+  (let ((inhibit-read-only t))
+    (goto-char harp-chat--input-marker)
+    (delete-region harp-chat--input-marker (point-max))
+    (insert (propertize "● You\n" 'face 'harp-user-face))
+    (insert text "\n\n")))
 
 (defun harp-chat--insert-assistant-start ()
   "Insert the start of an assistant message and set up streaming marker."
@@ -692,6 +700,61 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
       (if (assoc "content" msg)
           (setf (alist-get "content" msg nil nil #'string=) content)
         (setf (alist-get 'content msg) content)))))
+
+(defun harp-chat--slash-skills ()
+  "Return discovered slash skills for the current directory."
+  (when harp-context-include-slash-skills
+    (let ((git-root (harp-context--git-root)))
+      (harp-skills-discover default-directory git-root))))
+
+(defun harp-chat--slash-token-bounds ()
+  "Return (START . END) for the current slash token, or nil."
+  (when (and harp-chat--input-marker
+             (>= (point) harp-chat--input-marker))
+    (let* ((end (point))
+           (start (save-excursion
+                    (skip-chars-backward "A-Za-z0-9_.:-")
+                    (point)))
+           (slash-pos (1- start)))
+      (when (and (> start harp-chat--input-marker)
+                 (eq (char-after slash-pos) ?/))
+        (let ((before (when (> slash-pos harp-chat--input-marker)
+                        (char-before slash-pos))))
+          (when (or (= slash-pos harp-chat--input-marker)
+                    (and before (string-match-p "[[:space:]]"
+                                                (string before))))
+            (cons start end)))))))
+
+(defun harp-chat--slash-skill-capf ()
+  "Completion at point for slash skills in the input area."
+  (when-let ((bounds (harp-chat--slash-token-bounds)))
+    (let* ((start (car bounds))
+           (end (cdr bounds))
+           (skills (harp-chat--slash-skills))
+           (names (mapcar (lambda (skill)
+                            (alist-get 'name skill))
+                          skills)))
+      (list start end (or names '()) :exclusive 'yes))))
+
+(defvar-local harp-chat--slash-completion-timer nil
+  "Idle timer for auto-triggering slash completion.")
+
+(defun harp-chat--maybe-trigger-slash-completion ()
+  "Auto-trigger slash skill completion when typing in a slash token."
+  (when (harp-chat--slash-token-bounds)
+    (when harp-chat--slash-completion-timer
+      (cancel-timer harp-chat--slash-completion-timer))
+    (setq harp-chat--slash-completion-timer
+          (run-with-idle-timer
+           0.05 nil
+           (lambda (buf)
+             (when (buffer-live-p buf)
+               (with-current-buffer buf
+                 (setq harp-chat--slash-completion-timer nil)
+                 (let ((capf (harp-chat--slash-skill-capf)))
+                   (when (and capf (nth 2 capf) (> (length (nth 2 capf)) 0))
+                     (completion-at-point))))))
+           (current-buffer)))))
 
 (defun harp-chat--call-api ()
   "Make API call with current messages."

@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+set -euo pipefail
+
+ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)"
+"$ROOT/scripts/sync-agent-docs.sh" --check

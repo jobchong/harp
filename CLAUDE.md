@@ -2,6 +2,32 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Sync
+
+`CLAUDE.md` is generated from `AGENTS.md`. After editing `AGENTS.md`, run:
+
+```bash
+make sync-agent-docs
+```
+
+To verify they are in sync (for CI or pre-commit):
+
+```bash
+make check-agent-docs
+```
+
+Optional pre-commit hook:
+
+```bash
+git config core.hooksPath scripts/githooks
+```
+
+One-step setup:
+
+```bash
+./scripts/setup.sh
+```
+
 ## Project Overview
 
 emacs-harp is an Emacs package providing a coding assistant with a two-pane interface (chat + file). It supports Claude (Anthropic) and GPT (OpenAI) with streaming responses and configurable tool approval.
@@ -42,8 +68,11 @@ emacs -Q -batch -L . -l harp-test.el --eval "(ert-run-tests-batch-and-exit 'test
 ## Autonomy loop expectations
 
 - **Mode**: Work mostly autonomously. Only ask when a shell command or URL needs permission; do not spend time on workarounds.
-- **Loop**: Identify a concrete product improvement, implement it, review output, commit, then immediately move to the next improvement.
+- **Loop**: Identify a concrete product improvement, implement it, review output, add tests, commit, then immediately move to the next improvement.
 - **Commits**: Commit after each improvement loop so changes are easy to revert. Use concise conventional commit messages (e.g., `fix: ...`, `feat: ...`).
 - **Libraries**: It's OK to introduce external libraries if they clearly improve readability or maintainability; prefer to do so when it meaningfully simplifies custom code.
+- **Compilation**: Ensure byte-compilation succeeds after each code change.
+- **Compilation command**: After each code change, run `emacs -Q -batch -L . -f batch-byte-compile *.el`.
+- **Compilation warnings**: Warnings are acceptable; do not block on them.
 - **Style**: Prefer helper functions (e.g., `cl-labels`) to keep nesting and parenthesis depth shallow.
 - **Compilation workflow**: After changes, byte-compile all `*.el` files; if compilation succeeds, delete the generated `*.elc` files.

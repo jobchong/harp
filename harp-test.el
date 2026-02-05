@@ -9,6 +9,8 @@
 
 ;;; Code:
 
+(setq load-prefer-newer t)
+
 (require 'ert)
 (require 'cl-lib)
 (require 'harp-tools)
@@ -159,6 +161,29 @@
       (let* ((skills (harp-skills-discover dir nil))
              (parsed (harp-skills-parse-invocation "/foo" skills 100)))
         (should (equal (plist-get parsed :user-input) ""))))))
+
+(ert-deftest harp-test-slash-skills-capf ()
+  (harp-test--with-temp-dir dir
+    (let* ((skills-dir (expand-file-name ".claude/skills/question" dir))
+           (skill-file (expand-file-name "SKILL.md" skills-dir)))
+      (make-directory skills-dir t)
+      (with-temp-file skill-file
+        (insert "---\nname: question\ndescription: Question skill\n---\nBody\n"))
+      (with-temp-buffer
+        (let ((default-directory dir)
+              (harp-context-include-slash-skills t))
+          (harp-chat-mode)
+          (harp-chat--insert-prompt)
+          (insert "/q")
+          (let* ((capf (harp-chat--slash-skill-capf))
+                 (start (nth 0 capf))
+                 (end (nth 1 capf))
+                 (table (nth 2 capf))
+                 (prefix (buffer-substring-no-properties start end))
+                 (cands (completion-all-completions prefix table nil (length prefix))))
+            (should (cl-find-if (lambda (cand)
+                                  (string= cand "question"))
+                                cands))))))))
 
 (ert-deftest harp-test-context-current-file-content ()
   (harp-test--with-temp-dir dir
