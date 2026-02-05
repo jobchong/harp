@@ -36,7 +36,7 @@
   :group 'harp-context)
 
 (defcustom harp-context-include-slash-skills t
-  "Whether to include discovered slash skills in context."
+  "Whether to include discovered slash skills/commands in context."
   :type 'boolean
   :group 'harp-context)
 

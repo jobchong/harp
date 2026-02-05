@@ -120,6 +120,18 @@
                               (string= (alist-get 'name s) "foo"))
                             skills))))))
 
+(ert-deftest harp-test-slash-commands-discover ()
+  (harp-test--with-temp-dir dir
+    (let* ((commands-dir (expand-file-name ".claude/commands" dir))
+           (command-file (expand-file-name "question.md" commands-dir)))
+      (make-directory commands-dir t)
+      (with-temp-file command-file
+        (insert "---\ndescription: Question command\n---\nBody\n"))
+      (let ((skills (harp-skills-discover dir nil)))
+        (should (cl-find-if (lambda (s)
+                              (string= (alist-get 'name s) "question"))
+                            skills))))))
+
 (ert-deftest harp-test-slash-skills-parent-precedence ()
   (harp-test--with-temp-dir dir
     (let* ((root-skill-dir (expand-file-name ".claude/skills/foo" dir))
@@ -169,6 +181,29 @@
       (make-directory skills-dir t)
       (with-temp-file skill-file
         (insert "---\nname: question\ndescription: Question skill\n---\nBody\n"))
+      (with-temp-buffer
+        (let ((default-directory dir)
+              (harp-context-include-slash-skills t))
+          (harp-chat-mode)
+          (harp-chat--insert-prompt)
+          (insert "/q")
+          (let* ((capf (harp-chat--slash-skill-capf))
+                 (start (nth 0 capf))
+                 (end (nth 1 capf))
+                 (table (nth 2 capf))
+                 (prefix (buffer-substring-no-properties start end))
+                 (cands (completion-all-completions prefix table nil (length prefix))))
+            (should (cl-find-if (lambda (cand)
+                                  (string= cand "question"))
+                                cands))))))))
+
+(ert-deftest harp-test-slash-commands-capf ()
+  (harp-test--with-temp-dir dir
+    (let* ((commands-dir (expand-file-name ".claude/commands" dir))
+           (command-file (expand-file-name "question.md" commands-dir)))
+      (make-directory commands-dir t)
+      (with-temp-file command-file
+        (insert "Body\n"))
       (with-temp-buffer
         (let ((default-directory dir)
               (harp-context-include-slash-skills t))

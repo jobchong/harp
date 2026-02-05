@@ -5,8 +5,8 @@
 ;; Part of harp.el
 
 ;;; Commentary:
-;; Discover slash skills in .codex/.agents/.claude directories and parse
-;; slash command invocations.
+;; Discover slash skills in .codex/.agents/.claude directories (including
+;; Claude commands under .claude/commands) and parse slash command invocations.
 
 ;;; Code:
 
@@ -19,6 +19,9 @@
 (defconst harp-skills--command-regexp
   "\\`[[:space:]]*/\\([A-Za-z0-9_.:-]+\\)\\(?:[[:space:]]+\\(.*\\)\\)?\\'"
   "Regexp for slash skill invocation.")
+
+(defconst harp-skills--command-file-regexp "\\.md\\'"
+  "Regexp for slash command files.")
 
 (defun harp-skills--normalize-newlines (text)
   "Normalize newline sequences in TEXT."
@@ -105,6 +108,23 @@
          (body (or (cdr split) "")))
     (string-trim body)))
 
+(defun harp-skills--register-skill (meta path source root seen results)
+  "Register META from PATH into RESULTS if not already in SEEN."
+  (let ((name (alist-get 'name meta)))
+    (if (or (null name) (string-empty-p name) (gethash name seen))
+        results
+      (puthash name t seen)
+      (cons (append meta
+                    `((path . ,path)
+                      (source . ,source)
+                      (root . ,root)))
+            results))))
+
+(defun harp-skills--command-files (commands-dir)
+  "Return a list of command files under COMMANDS-DIR."
+  (when (file-directory-p commands-dir)
+    (directory-files-recursively commands-dir harp-skills--command-file-regexp)))
+
 (defun harp-skills--truncate (text max-size)
   "Truncate TEXT to MAX-SIZE characters, adding a marker when truncated."
   (if (and (stringp text) (integerp max-size) (> (length text) max-size))
@@ -144,17 +164,20 @@
               (when (file-directory-p entry)
                 (let ((skill-path (expand-file-name "SKILL.md" entry)))
                   (when (file-exists-p skill-path)
-                    (let* ((meta (harp-skills--read-metadata
-                                  skill-path
-                                  (file-name-nondirectory entry)))
-                           (name (alist-get 'name meta)))
-                      (unless (gethash name seen)
-                        (puthash name t seen)
-                        (push (append meta
-                                      `((path . ,skill-path)
-                                        (source . ,source)
-                                        (root . ,root)))
-                              results)))))))))))
+                    (let ((meta (harp-skills--read-metadata
+                                 skill-path
+                                 (file-name-nondirectory entry))))
+                      (setq results
+                            (harp-skills--register-skill
+                             meta skill-path source root seen results)))))))))
+        (when (string= source ".claude")
+          (let ((commands-dir (expand-file-name (concat source "/commands") root)))
+            (dolist (command-path (harp-skills--command-files commands-dir))
+              (let* ((default-name (file-name-base command-path))
+                     (meta (harp-skills--read-metadata command-path default-name)))
+                (setq results
+                      (harp-skills--register-skill
+                       meta command-path source root seen results))))))))
     (nreverse results)))
 
 (defun harp-skills-parse-invocation (raw-input skills &optional max-body-size)

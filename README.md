@@ -104,10 +104,12 @@ per project with `harp-project-approval-alist`.
 
 ## Slash Skills
 
-Harp discovers skills from `.codex/skills`, `.agents/skills`, and `.claude/skills`
+Harp discovers skills from `.codex/skills`, `.agents/skills`, `.claude/skills`,
+and Claude-style commands from `.claude/commands`
 in the working directory and parent directories up to the git root. Invoke them
-with `/skill-name your request`. Harp injects the skill body into the system
-prompt and sends only the remaining text as the user message.
+with `/skill-name your request`. If a skill and command share a name, the skill
+wins. Harp injects the skill body into the system prompt and sends only the
+remaining text as the user message.
 
 ## Development
 
