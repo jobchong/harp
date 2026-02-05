@@ -16,6 +16,7 @@
 (require 'harp-context)
 (require 'harp-skills)
 (require 'harp-debug)
+(require 'cl-lib)
 (require 'seq)
 (require 'project)
 
@@ -97,19 +98,15 @@
   :group 'harp-chat)
 
 (defface harp-code-face
-  '((((class color) (background light))
-     :inherit fixed-pitch :background "#f3f4f6" :foreground "#1f2937")
-    (((class color) (background dark))
-     :inherit fixed-pitch :background "#374151" :foreground "#f9fafb"))
-  "Face for inline code."
+  '((t :inherit fixed-pitch))
+  "Face for inline code.
+Background is set dynamically from the theme by `harp-chat--setup-theme-faces'."
   :group 'harp-chat)
 
 (defface harp-code-block-face
-  '((((class color) (background light))
-     :inherit fixed-pitch :background "#f9fafb" :extend t)
-    (((class color) (background dark))
-     :inherit fixed-pitch :background "#1f2937" :extend t))
-  "Face for code blocks."
+  '((t :inherit fixed-pitch :extend t))
+  "Face for code blocks.
+Background is set dynamically from the theme by `harp-chat--setup-theme-faces'."
   :group 'harp-chat)
 
 (defface harp-file-link-face
@@ -240,42 +237,165 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 
 ;;; Markdown highlighting
 
+(defface harp-bold-face
+  '((t :weight bold))
+  "Face for bold markdown text."
+  :group 'harp-chat)
+
+(defface harp-italic-face
+  '((t :slant italic))
+  "Face for italic markdown text."
+  :group 'harp-chat)
+
+(defface harp-bold-italic-face
+  '((t :weight bold :slant italic))
+  "Face for bold-italic markdown text."
+  :group 'harp-chat)
+
+(defface harp-heading-1-face
+  '((t :inherit outline-1 :height 1.4))
+  "Face for level 1 headings."
+  :group 'harp-chat)
+
+(defface harp-heading-2-face
+  '((t :inherit outline-2 :height 1.2))
+  "Face for level 2 headings."
+  :group 'harp-chat)
+
+(defface harp-heading-3-face
+  '((t :inherit outline-3 :height 1.1))
+  "Face for level 3 headings."
+  :group 'harp-chat)
+
 (defface harp-code-lang-face
-  '((((class color) (background light))
-     :foreground "#6b7280" :weight bold :height 0.85)
-    (((class color) (background dark))
-     :foreground "#9ca3af" :weight bold :height 0.85))
+  '((t :inherit shadow :weight bold :height 0.85))
   "Face for code block language labels."
   :group 'harp-chat)
+
+(defun harp-chat--derive-bg (delta)
+  "Return a background color DELTA away from the theme default.
+Positive DELTA lightens, negative darkens."
+  (when-let* ((bg (face-background 'default nil t))
+              (rgb (color-name-to-rgb bg)))
+    (apply #'format "#%02x%02x%02x"
+           (mapcar (lambda (c)
+                     (round (* 255 (max 0.0 (min 1.0 (+ c delta))))))
+                   rgb))))
+
+(defun harp-chat--setup-theme-faces ()
+  "Set code face backgrounds from the current theme."
+  (let* ((bg (face-background 'default nil t))
+         (rgb (and bg (color-name-to-rgb bg)))
+         (lum (and rgb (+ (* 0.299 (nth 0 rgb))
+                          (* 0.587 (nth 1 rgb))
+                          (* 0.114 (nth 2 rgb)))))
+         (delta (if (and lum (> lum 0.5)) -0.03 0.04)))
+    (when-let ((code-bg (harp-chat--derive-bg delta)))
+      (face-remap-add-relative 'harp-code-face :background code-bg)
+      (face-remap-add-relative 'harp-code-block-face :background code-bg))))
+
+(defun harp-chat--overlaps-skip-p (start end regions)
+  "Return non-nil if START..END overlaps any region in REGIONS."
+  (cl-some (lambda (r) (and (< start (cdr r)) (> end (car r)))) regions))
 
 (defun harp-chat--highlight-markdown (start end)
   "Apply markdown syntax highlighting to region from START to END."
   (save-excursion
-    ;; Fenced code blocks: ```lang\n...\n```
-    (goto-char start)
-    (while (re-search-forward "```\\([a-zA-Z0-9]*\\)?\n\\(\\(?:.\\|\n\\)*?\\)```" end t)
-      (let* ((fence-start (match-beginning 0))
-             (lang (match-string 1))
-             (code-start (match-beginning 2))
-             (code-end (match-end 2)))
-        ;; Hide the opening fence and add language label
-        (when (and lang (not (string-empty-p lang)))
-          (add-text-properties fence-start (1+ fence-start)
-                               `(display ,(propertize (format "─── %s " lang)
-                                                      'face 'harp-code-lang-face))))
-        ;; Apply code block face
-        (add-text-properties code-start code-end
-                             '(face harp-code-block-face))
-        ;; Try language-specific highlighting if available
-        (when (and lang (not (string-empty-p lang)))
-          (harp-chat--fontify-code-block lang code-start code-end))))
-    ;; Inline code: `code`
-    (goto-char start)
-    (while (re-search-forward "`\\([^`\n]+\\)`" end t)
-      (add-text-properties (match-beginning 1) (match-end 1)
-                           '(face harp-code-face)))
-    ;; Linkify file paths in prose
-    (harp-chat--linkify-file-paths start end)))
+    (let ((skip nil))
+      ;; 1. Fenced code blocks (fences must be at line start)
+      (goto-char start)
+      (while (re-search-forward
+              "^```\\([a-zA-Z0-9]*\\)?\n\\(\\(?:.\\|\n\\)*?\\)\n```" end t)
+        (let* ((fence-start (match-beginning 0))
+               (lang (match-string 1))
+               (code-start (match-beginning 2))
+               (code-end (match-end 2))
+               (close-end (match-end 0)))
+          (push (cons fence-start close-end) skip)
+          ;; Hide opening fence line, replace with language label
+          (let ((label (if (and lang (not (string-empty-p lang)))
+                           (propertize (format "─── %s \n" lang)
+                                       'face 'harp-code-lang-face)
+                         (propertize "───\n" 'face 'harp-separator-face))))
+            (add-text-properties fence-start code-start
+                                 `(display ,label)))
+          ;; Hide closing fence, replace with separator
+          (add-text-properties code-end close-end
+                               `(display ,(propertize "\n───"
+                                                      'face 'harp-separator-face)))
+          ;; Apply code block face
+          (add-text-properties code-start code-end
+                               '(face harp-code-block-face))
+          ;; Language-specific highlighting
+          (when (and lang (not (string-empty-p lang)))
+            (harp-chat--fontify-code-block lang code-start code-end))))
+
+      ;; 2. Headings: # H1, ## H2, ### H3
+      (goto-char start)
+      (while (re-search-forward "^\\(#\\{1,3\\}\\) \\(.*\\)$" end t)
+        (let ((m-start (match-beginning 0))
+              (m-end (match-end 0))
+              (hashes (match-string 1))
+              (hash-end (match-end 1)))
+          (unless (harp-chat--overlaps-skip-p m-start m-end skip)
+            (push (cons m-start m-end) skip)
+            ;; Hide "# " prefix
+            (add-text-properties m-start (1+ hash-end) '(display ""))
+            (let ((face (pcase (length hashes)
+                          (1 'harp-heading-1-face)
+                          (2 'harp-heading-2-face)
+                          (_ 'harp-heading-3-face))))
+              (add-face-text-property (match-beginning 2) (match-end 2) face)))))
+
+      ;; 3. Bold-italic: ***text***
+      (goto-char start)
+      (while (re-search-forward "\\*\\*\\*\\([^*\n]+?\\)\\*\\*\\*" end t)
+        (let ((m-start (match-beginning 0))
+              (m-end (match-end 0)))
+          (unless (harp-chat--overlaps-skip-p m-start m-end skip)
+            (push (cons m-start m-end) skip)
+            (add-text-properties m-start (match-beginning 1) '(display ""))
+            (add-text-properties (match-end 1) m-end '(display ""))
+            (add-face-text-property (match-beginning 1) (match-end 1)
+                                    'harp-bold-italic-face))))
+
+      ;; 4. Bold: **text**
+      (goto-char start)
+      (while (re-search-forward "\\*\\*\\([^*\n]+?\\)\\*\\*" end t)
+        (let ((m-start (match-beginning 0))
+              (m-end (match-end 0)))
+          (unless (harp-chat--overlaps-skip-p m-start m-end skip)
+            (push (cons m-start m-end) skip)
+            (add-text-properties m-start (match-beginning 1) '(display ""))
+            (add-text-properties (match-end 1) m-end '(display ""))
+            (add-face-text-property (match-beginning 1) (match-end 1)
+                                    'harp-bold-face))))
+
+      ;; 5. Italic: *text*
+      (goto-char start)
+      (while (re-search-forward "\\*\\([^*\n]+?\\)\\*" end t)
+        (let ((m-start (match-beginning 0))
+              (m-end (match-end 0)))
+          (unless (harp-chat--overlaps-skip-p m-start m-end skip)
+            (push (cons m-start m-end) skip)
+            (add-text-properties m-start (match-beginning 1) '(display ""))
+            (add-text-properties (match-end 1) m-end '(display ""))
+            (add-face-text-property (match-beginning 1) (match-end 1)
+                                    'harp-italic-face))))
+
+      ;; 6. Inline code: `code`
+      (goto-char start)
+      (while (re-search-forward "`\\([^`\n]+\\)`" end t)
+        (let ((m-start (match-beginning 0))
+              (m-end (match-end 0)))
+          (unless (harp-chat--overlaps-skip-p m-start m-end skip)
+            (add-text-properties m-start (match-beginning 1) '(display ""))
+            (add-text-properties (match-end 1) m-end '(display ""))
+            (add-text-properties (match-beginning 1) (match-end 1)
+                                 '(face harp-code-face)))))
+
+      ;; 7. Linkify file paths in prose
+      (harp-chat--linkify-file-paths start end))))
 
 (defun harp-chat--fontify-code-block (lang start end)
   "Apply fontification for LANG to code block from START to END."
@@ -439,6 +559,10 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--response-start (make-marker))
   (setq-local harp-chat--status-updated nil)
   (setq-local harp-chat--working-directory nil)
+  ;; Word wrap at word boundaries
+  (visual-line-mode 1)
+  ;; Theme-aware code backgrounds
+  (harp-chat--setup-theme-faces)
   ;; Set up approval hook
   (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t)
   (add-hook 'completion-at-point-functions #'harp-chat--slash-skill-capf nil t)
