@@ -397,6 +397,9 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
 (defvar-local harp-chat--response-start nil
   "Marker for the start of the current assistant response content.")
 
+(defvar-local harp-chat--working-directory nil
+  "Manual working directory override for the chat buffer.")
+
 ;;; Buffer name
 
 (defconst harp-chat-buffer-name "*harp*"
@@ -435,6 +438,7 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   (setq-local harp-chat--tool-usage-total 0)
   (setq-local harp-chat--response-start (make-marker))
   (setq-local harp-chat--status-updated nil)
+  (setq-local harp-chat--working-directory nil)
   ;; Set up approval hook
   (add-hook 'harp-approval-request-hook #'harp-chat--show-approval nil t)
   (add-hook 'completion-at-point-functions #'harp-chat--slash-skill-capf nil t)
@@ -1100,13 +1104,32 @@ If MODIFIED is non-nil, use `harp-file-modified-face'."
   "Set the file BUFFER that this chat is associated with."
   (with-current-buffer harp-chat-buffer-name
     (setq harp-chat--file-buffer buffer)
-    (when buffer
-      (let ((proj (project-current nil buffer)))
-        (setq default-directory
-              (or (and proj (project-root proj))
-                  (and (buffer-file-name buffer)
-                       (file-name-directory (buffer-file-name buffer)))
-                  default-directory))))))
+    (when (and buffer (buffer-live-p buffer))
+      (let (proj file-dir)
+        (with-current-buffer buffer
+          (setq proj (project-current))
+          (setq file-dir (and buffer-file-name
+                              (file-name-directory buffer-file-name))))
+        (unless harp-chat--working-directory
+          (setq default-directory
+                (or (and proj (project-root proj))
+                    file-dir
+                    default-directory)))))))
+
+(defun harp-chat-set-working-directory (dir)
+  "Set the chat buffer working directory to DIR."
+  (interactive (list (read-directory-name
+                      "Harp working directory: " default-directory nil t)))
+  (let ((buffer (get-buffer harp-chat-buffer-name)))
+    (unless (buffer-live-p buffer)
+      (user-error "Harp chat buffer not found. Run `harp-start` first"))
+    (let* ((expanded (file-name-as-directory (expand-file-name dir))))
+      (unless (file-directory-p expanded)
+        (user-error "Not a directory: %s" dir))
+      (with-current-buffer buffer
+        (setq harp-chat--working-directory expanded)
+        (setq default-directory expanded))
+      (message "Harp working directory set to %s" expanded))))
 
 (provide 'harp-chat)
 ;;; harp-chat.el ends here

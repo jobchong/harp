@@ -241,6 +241,43 @@
                           harp-chat--input-marker (point-max))
                          "/add")))))))
 
+(ert-deftest harp-test-chat-set-working-directory ()
+  (harp-test--with-temp-dir dir
+    (let* ((sub1 (expand-file-name "one" dir))
+           (sub2 (expand-file-name "two" dir))
+           (file (expand-file-name "one/file.txt" dir))
+           (chat (get-buffer-create harp-chat-buffer-name))
+           (file-buf (generate-new-buffer " *harp-test-file*")))
+      (make-directory sub1 t)
+      (make-directory sub2 t)
+      (with-temp-file file
+        (insert "hi"))
+      (unwind-protect
+          (progn
+            (with-current-buffer chat
+              (harp-chat-mode)
+              (harp-chat--insert-prompt))
+            (with-current-buffer file-buf
+              (setq default-directory (file-name-as-directory sub1))
+              (setq buffer-file-name file))
+            (harp-chat-set-file-buffer file-buf)
+            (with-current-buffer chat
+              (should (equal default-directory
+                             (file-name-as-directory sub1))))
+            (harp-chat-set-working-directory sub2)
+            (with-current-buffer chat
+              (should (equal default-directory
+                             (file-name-as-directory sub2))))
+            ;; Manual override should persist across file buffer updates.
+            (harp-chat-set-file-buffer file-buf)
+            (with-current-buffer chat
+              (should (equal default-directory
+                             (file-name-as-directory sub2)))))
+        (when (buffer-live-p file-buf)
+          (kill-buffer file-buf))
+        (when (buffer-live-p chat)
+          (kill-buffer chat))))))
+
 (ert-deftest harp-test-context-current-file-content ()
   (harp-test--with-temp-dir dir
     (let ((harp-context-include-git nil)

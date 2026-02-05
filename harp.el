@@ -38,6 +38,7 @@
 (eval-when-compile
   (declare-function harp-chat-setup-buffer "harp-chat")
   (declare-function harp-chat-set-file-buffer "harp-chat")
+  (declare-function harp-chat-set-working-directory "harp-chat")
   (declare-function harp--cleanup-connections "harp-api"))
 
 (defvar harp-chat-buffer-name)
@@ -161,6 +162,13 @@ Left pane is the chat interface, right pane shows files."
     (setq harp-model model)
     (setq harp-default-provider provider)
     (message "Selected %s (%s)" model provider)))
+
+;;;###autoload
+(defun harp-set-working-directory (dir)
+  "Set the harp chat working directory to DIR."
+  (interactive (list (read-directory-name
+                      "Harp working directory: " default-directory nil t)))
+  (harp-chat-set-working-directory dir))
 
 (provide 'harp)
 ;;; harp.el ends here
