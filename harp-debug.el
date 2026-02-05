@@ -52,7 +52,7 @@ When nil, logs only go to *Messages*."
 
 (defun harp-debug--enabled-p (level)
   "Return non-nil if LEVEL should be logged."
-  (>= (harp-debug--level-value level)
+  (<= (harp-debug--level-value level)
       (harp-debug--level-value harp-debug-level)))
 
 (defun harp-debug-log (level fmt &rest args)
