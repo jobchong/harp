@@ -48,7 +48,7 @@ To install Emacs and byte-compile in one step:
 
 ;; Provider and model
 (setq harp-default-provider 'anthropic)
-(setq harp-model "claude-sonnet-4-20250514")
+(setq harp-model "claude-sonnet-4-6")
 (setq harp-max-tokens 8192)
 
 ;; Tool approvals: none, dangerous-only, full

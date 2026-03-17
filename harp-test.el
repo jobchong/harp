@@ -14,6 +14,7 @@
 (require 'ert)
 (require 'cl-lib)
 (require 'harp-tools)
+(require 'harp-api)
 (require 'harp-context)
 (require 'harp-chat)
 (require 'harp-skills)
@@ -107,6 +108,17 @@
   (let ((result (harp-execute-tool "run_shell" '((command . "printf 'hi'")))))
     (should (string-match-p "Exit code: 0" result))
     (should (string-match-p "hi" result))))
+
+(ert-deftest harp-test-curated-model-routing ()
+  (should (equal harp-model "claude-sonnet-4-6"))
+  (should (equal (alist-get "claude-sonnet-4-6" harp-model-provider-alist nil nil #'string=)
+                 'anthropic))
+  (should (equal (alist-get "claude-haiku-4-5-20251001" harp-model-provider-alist nil nil #'string=)
+                 'anthropic))
+  (should (equal (alist-get "gpt-5.3-codex" harp-model-provider-alist nil nil #'string=)
+                 'openai))
+  (should (equal (alist-get "gpt-5.4" harp-model-provider-alist nil nil #'string=)
+                 'openai)))
 
 (ert-deftest harp-test-slash-skills-discover ()
   (harp-test--with-temp-dir dir

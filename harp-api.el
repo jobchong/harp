@@ -30,7 +30,7 @@
   :type 'string
   :group 'harp-api)
 
-(defcustom harp-model "claude-sonnet-4-20250514"
+(defcustom harp-model "claude-sonnet-4-6"
   "Current model - set via `harp-select-model'."
   :type 'string
   :group 'harp-api)
@@ -46,9 +46,11 @@
   :group 'harp-api)
 
 (defcustom harp-model-provider-alist
-  '(("claude-opus-4-5-20251101" . anthropic)
-    ("claude-sonnet-4-20250514" . anthropic)
-    ("gpt-5.1-codex-max" . openai))
+  '(("claude-opus-4-6" . anthropic)
+    ("claude-sonnet-4-6" . anthropic)
+    ("claude-haiku-4-5-20251001" . anthropic)
+    ("gpt-5.3-codex" . openai)
+    ("gpt-5.4" . openai))
   "Map model names to providers for automatic routing."
   :type '(alist :key-type string :value-type symbol)
   :group 'harp-api)

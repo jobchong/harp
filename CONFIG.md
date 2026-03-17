@@ -7,7 +7,7 @@ them in Emacs via `M-x customize-group RET harp RET`.
 
 - `harp-api-key-anthropic` (string or nil, default `nil`): Anthropic API key.
 - `harp-api-key-openai` (string or nil, default `nil`): OpenAI API key.
-- `harp-model` (string, default `"claude-sonnet-4-20250514"`): Current model name (used by `harp-select-model`).
+- `harp-model` (string, default `"claude-sonnet-4-6"`): Current model name (used by `harp-select-model`).
 - `harp-default-provider` (symbol, default `anthropic`): Default provider, `anthropic` or `openai`.
 - `harp-max-tokens` (integer, default `8192`): Max output tokens for responses.
 - `harp-model-provider-alist` (alist, default below): Map model names to providers.
@@ -16,9 +16,11 @@ them in Emacs via `M-x customize-group RET harp RET`.
 Default `harp-model-provider-alist`:
 
 ```elisp
-(("claude-opus-4-5-20251101" . anthropic)
- ("claude-sonnet-4-20250514" . anthropic)
- ("gpt-5.1-codex-max" . openai))
+(("claude-opus-4-6" . anthropic)
+ ("claude-sonnet-4-6" . anthropic)
+ ("claude-haiku-4-5-20251001" . anthropic)
+ ("gpt-5.3-codex" . openai)
+ ("gpt-5.4" . openai))
 ```
 
 ## Chat behavior (`harp-chat`)
